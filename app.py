@@ -1,18 +1,19 @@
 from flask import Flask, request, render_template_string, redirect, url_for, session
 import os
 import json
+import base64
 from openai import OpenAI
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "gizli123")
 
-# -------------------------------
-# DOSYA YARDIMCILARI
-# -------------------------------
 USERS_FILE = "users.json"
 DATA_FILE = "data.json"
 
 
+# =========================
+# DOSYA YARDIMCILARI
+# =========================
 def ensure_files():
     if not os.path.exists(USERS_FILE):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -51,9 +52,9 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-# -------------------------------
+# =========================
 # OPENAI CLIENT
-# -------------------------------
+# =========================
 def get_client():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -61,10 +62,17 @@ def get_client():
     return OpenAI(api_key=api_key)
 
 
-# -------------------------------
-# HTML ŞABLONU
-# -------------------------------
-BASE_HTML = """
+def image_file_to_data_url(file_storage):
+    mime_type = file_storage.mimetype or "image/jpeg"
+    raw = file_storage.read()
+    encoded = base64.b64encode(raw).decode("utf-8")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+# =========================
+# HTML
+# =========================
+HTML = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -72,47 +80,38 @@ BASE_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Asistan</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
+        * { box-sizing: border-box; }
         body {
             margin: 0;
             font-family: Arial, sans-serif;
             background: #0f172a;
             color: white;
         }
-
         a {
             text-decoration: none;
             color: inherit;
         }
-
         .layout {
             display: flex;
             min-height: 100vh;
         }
-
         .sidebar {
             width: 260px;
             background: #020617;
             padding: 14px;
             border-right: 1px solid #1e293b;
         }
-
         .sidebar h2 {
             margin-top: 0;
             font-size: 18px;
         }
-
-        .sidebar .user-box {
+        .user-box {
             margin-bottom: 14px;
             padding: 10px;
             background: #111827;
             border-radius: 10px;
         }
-
-        .sidebar .new-chat {
+        .new-chat {
             display: block;
             width: 100%;
             background: #38bdf8;
@@ -123,31 +122,26 @@ BASE_HTML = """
             font-weight: bold;
             margin-bottom: 12px;
         }
-
         .chat-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
-
         .chat-item {
+            display: block;
             padding: 10px;
             border-radius: 10px;
             background: #111827;
             font-size: 14px;
-            cursor: pointer;
         }
-
         .chat-item.active {
             background: #2563eb;
         }
-
         .main {
             flex: 1;
             display: flex;
             flex-direction: column;
         }
-
         .topbar {
             background: #020617;
             padding: 14px 18px;
@@ -155,13 +149,13 @@ BASE_HTML = """
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
         }
-
-        .topbar .right-buttons {
+        .right-buttons {
             display: flex;
             gap: 8px;
+            flex-wrap: wrap;
         }
-
         .btn {
             border: none;
             border-radius: 10px;
@@ -169,66 +163,69 @@ BASE_HTML = """
             cursor: pointer;
             font-weight: bold;
         }
-
         .btn-blue {
             background: #38bdf8;
             color: black;
         }
-
         .btn-red {
             background: #ef4444;
             color: white;
         }
-
+        .btn-green {
+            background: #22c55e;
+            color: black;
+        }
         .messages {
             flex: 1;
             padding: 18px;
             overflow-y: auto;
             background: #0f172a;
         }
-
         .msg {
-            max-width: 80%;
+            max-width: 85%;
             margin-bottom: 12px;
             padding: 12px;
             border-radius: 12px;
-            line-height: 1.4;
+            line-height: 1.5;
             white-space: pre-wrap;
         }
-
         .msg-user {
             background: #0ea5e9;
             color: black;
             margin-left: auto;
             text-align: right;
         }
-
         .msg-bot {
             background: #22c55e;
             color: black;
             margin-right: auto;
             text-align: left;
         }
-
+        .msg img {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
         .bottom {
             padding: 12px;
             background: #020617;
             border-top: 1px solid #1e293b;
         }
-
-        .send-form {
+        .send-form,
+        .image-form {
             display: flex;
             gap: 8px;
+            margin-bottom: 10px;
         }
-
-        .send-form input {
+        .send-form input,
+        .image-form input[type="text"],
+        .image-form input[type="file"] {
             flex: 1;
             padding: 12px;
-            border: none;
             border-radius: 10px;
+            border: none;
             font-size: 14px;
         }
-
         .card {
             max-width: 420px;
             margin: 60px auto;
@@ -236,7 +233,6 @@ BASE_HTML = """
             padding: 22px;
             border-radius: 14px;
         }
-
         .card input {
             width: 100%;
             padding: 12px;
@@ -244,45 +240,45 @@ BASE_HTML = """
             border: none;
             border-radius: 10px;
         }
-
         .error {
-            color: #fca5a5;
-            margin-bottom: 10px;
-            min-height: 20px;
+            color: #fecaca;
+            background: #7f1d1d;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 12px;
         }
-
         .helper-link {
             color: #38bdf8;
             font-weight: bold;
         }
-
         @media (max-width: 800px) {
-            .layout {
-                flex-direction: column;
-            }
-
+            .layout { flex-direction: column; }
             .sidebar {
                 width: 100%;
                 border-right: none;
                 border-bottom: 1px solid #1e293b;
             }
-
-            .messages {
-                min-height: 50vh;
+            .messages { min-height: 50vh; }
+            .send-form, .image-form {
+                flex-direction: column;
             }
         }
     </style>
 </head>
 <body>
-    %CONTENT%
+    {{ content|safe }}
 </body>
 </html>
 """
 
 
-# -------------------------------
+def render_page(content):
+    return render_template_string(HTML, content=content)
+
+
+# =========================
 # REGISTER
-# -------------------------------
+# =========================
 @app.route("/register", methods=["GET", "POST"])
 def register():
     error = ""
@@ -302,17 +298,14 @@ def register():
                     break
 
             if error == "":
-                users.append({
-                    "username": username,
-                    "password": password
-                })
+                users.append({"username": username, "password": password})
                 save_users(users)
                 return redirect(url_for("login"))
 
     content = f"""
     <div class="card">
         <h2>Kayıt Ol</h2>
-        <div class="error">{error}</div>
+        {"<div class='error'>" + error + "</div>" if error else ""}
         <form method="post">
             <input name="username" placeholder="Kullanıcı adı">
             <input name="password" type="password" placeholder="Şifre">
@@ -321,12 +314,12 @@ def register():
         <p>Zaten hesabın var mı? <a class="helper-link" href="/login">Giriş Yap</a></p>
     </div>
     """
-    return BASE_HTML.replace("%CONTENT%", content)
+    return render_page(content)
 
 
-# -------------------------------
+# =========================
 # LOGIN
-# -------------------------------
+# =========================
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
@@ -352,7 +345,7 @@ def login():
     content = f"""
     <div class="card">
         <h2>Giriş Yap</h2>
-        <div class="error">{error}</div>
+        {"<div class='error'>" + error + "</div>" if error else ""}
         <form method="post">
             <input name="username" placeholder="Kullanıcı adı">
             <input name="password" type="password" placeholder="Şifre">
@@ -361,21 +354,21 @@ def login():
         <p>Hesabın yok mu? <a class="helper-link" href="/register">Kayıt Ol</a></p>
     </div>
     """
-    return BASE_HTML.replace("%CONTENT%", content)
+    return render_page(content)
 
 
-# -------------------------------
+# =========================
 # LOGOUT
-# -------------------------------
+# =========================
 @app.route("/logout")
 def logout():
     session.pop("user", None)
     return redirect(url_for("login"))
 
 
-# -------------------------------
+# =========================
 # YENİ SOHBET
-# -------------------------------
+# =========================
 @app.route("/new_chat")
 def new_chat():
     if "user" not in session:
@@ -401,9 +394,9 @@ def new_chat():
     return redirect(url_for("index"))
 
 
-# -------------------------------
+# =========================
 # SOHBET DEĞİŞTİR
-# -------------------------------
+# =========================
 @app.route("/switch/<chat_id>")
 def switch_chat(chat_id):
     if "user" not in session:
@@ -419,9 +412,9 @@ def switch_chat(chat_id):
     return redirect(url_for("index"))
 
 
-# -------------------------------
-# SOHBET TEMİZLE
-# -------------------------------
+# =========================
+# SOHBETİ TEMİZLE
+# =========================
 @app.route("/clear_chat", methods=["POST"])
 def clear_chat():
     if "user" not in session:
@@ -439,9 +432,9 @@ def clear_chat():
     return redirect(url_for("index"))
 
 
-# -------------------------------
+# =========================
 # ANA SAYFA / CHAT
-# -------------------------------
+# =========================
 @app.route("/", methods=["GET", "POST"])
 def index():
     if "user" not in session:
@@ -449,8 +442,8 @@ def index():
 
     username = session["user"]
     data = load_data()
+    error = ""
 
-    # Kullanıcı için veri yoksa hazırla
     if username not in data or not isinstance(data[username], dict):
         data[username] = {
             "active_chat": "chat1",
@@ -474,44 +467,114 @@ def index():
     gecmis = chats[active_chat]
 
     if request.method == "POST":
-        soru = request.form.get("soru", "").strip()
+        action = request.form.get("action", "text")
+        client = get_client()
 
-        if soru != "":
-            gecmis.append({"role": "user", "content": soru})
+        if client is None:
+            error = "Sunucuda OPENAI_API_KEY ayarlı değil."
+        else:
+            # Yazı mesajı
+            if action == "text":
+                soru = request.form.get("soru", "").strip()
 
-            client = get_client()
-            if client is None:
-                cevap = "Sunucuda OPENAI_API_KEY ayarlı değil."
-            else:
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=gecmis
-                    )
-                    cevap = response.choices[0].message.content
-                except Exception as e:
-                    cevap = f"AI hatası: {str(e)}"
+                if soru != "":
+                    gecmis.append({"role": "user", "content": soru})
 
-            gecmis.append({"role": "assistant", "content": cevap})
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {
+                                    "role": m["role"],
+                                    "content": m["content"]
+                                }
+                                for m in gecmis
+                            ]
+                        )
+                        cevap = response.choices[0].message.content
+                    except Exception as e:
+                        cevap = f"AI hatası: {str(e)}"
 
-            data[username]["chats"][active_chat] = gecmis
-            save_data(data)
+                    gecmis.append({"role": "assistant", "content": cevap})
+                    data[username]["chats"][active_chat] = gecmis
+                    save_data(data)
+                    return redirect(url_for("index"))
 
-            return redirect(url_for("index"))
+            # Resim yorumlat
+            elif action == "image":
+                uploaded_file = request.files.get("image")
+                prompt = request.form.get("image_prompt", "").strip()
 
-    # Sol menü sohbet listesi
+                if not uploaded_file or uploaded_file.filename == "":
+                    error = "Lütfen bir resim seç."
+                else:
+                    if prompt == "":
+                        prompt = "Bu resmi detaylı ama anlaşılır şekilde yorumla."
+
+                    try:
+                        image_data_url = image_file_to_data_url(uploaded_file)
+
+                        gecmis.append({
+                            "role": "user",
+                            "content": f"[RESİM YÜKLENDİ] {prompt}",
+                            "image": image_data_url
+                        })
+
+                        response = client.responses.create(
+                            model="gpt-4.1-mini",
+                            input=[
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "input_text", "text": prompt},
+                                        {"type": "input_image", "image_url": image_data_url}
+                                    ]
+                                }
+                            ]
+                        )
+
+                        cevap = response.output_text
+
+                        gecmis.append({
+                            "role": "assistant",
+                            "content": cevap
+                        })
+
+                        data[username]["chats"][active_chat] = gecmis
+                        save_data(data)
+                        return redirect(url_for("index"))
+
+                    except Exception as e:
+                        error = f"Resim yorumlatma hatası: {str(e)}"
+
+    # sohbet listesi
     chat_list_html = ""
     for cid in chats.keys():
         cls = "chat-item active" if cid == active_chat else "chat-item"
         chat_list_html += f'<a class="{cls}" href="/switch/{cid}">{cid}</a>'
 
-    # Mesaj alanı
+    # mesajlar
     messages_html = ""
     for mesaj in gecmis:
-        if mesaj["role"] == "user":
-            messages_html += f'<div class="msg msg-user"><b>Sen:</b><br>{mesaj["content"]}</div>'
+        role = mesaj.get("role", "assistant")
+        content = mesaj.get("content", "")
+
+        if role == "user":
+            css = "msg msg-user"
+            title = "Sen"
         else:
-            messages_html += f'<div class="msg msg-bot"><b>AI:</b><br>{mesaj["content"]}</div>'
+            css = "msg msg-bot"
+            title = "AI"
+
+        extra_image = ""
+        if "image" in mesaj and mesaj["image"]:
+            extra_image = f'<br><img src="{mesaj["image"]}" alt="Yüklenen görsel">'
+
+        messages_html += f"""
+        <div class="{css}">
+            <b>{title}:</b><br>{content}{extra_image}
+        </div>
+        """
 
     content = f"""
     <div class="layout">
@@ -522,7 +585,7 @@ def index():
                 <div><b>Kullanıcı:</b> {username}</div>
             </div>
 
-            <a href="/new_chat" class="new-chat">+ Yeni Sohbet</a>
+            <a class="new-chat" href="/new_chat">+ Yeni Sohbet</a>
 
             <div class="chat-list">
                 {chat_list_html}
@@ -533,28 +596,39 @@ def index():
             <div class="topbar">
                 <div><b>Aktif Sohbet:</b> {active_chat}</div>
                 <div class="right-buttons">
-                    <form method="post" action="/clear_chat" style="display:inline;">
+                    <form method="post" action="/clear_chat" style="margin:0;">
                         <button class="btn btn-red" type="submit">Temizle</button>
                     </form>
-                    <a href="/logout"><button class="btn btn-blue" type="button">Çıkış</button></a>
+                    <a href="/logout">
+                        <button class="btn btn-blue" type="button">Çıkış</button>
+                    </a>
                 </div>
             </div>
 
             <div class="messages">
+                {"<div class='error'>" + error + "</div>" if error else ""}
                 {messages_html}
             </div>
 
             <div class="bottom">
                 <form class="send-form" method="post">
+                    <input type="hidden" name="action" value="text">
                     <input name="soru" placeholder="Mesaj yaz..." autofocus>
                     <button class="btn btn-blue" type="submit">Gönder</button>
+                </form>
+
+                <form class="image-form" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="image">
+                    <input type="file" name="image" accept="image/*" required>
+                    <input type="text" name="image_prompt" placeholder="Resim hakkında ne sormak istiyorsun?">
+                    <button class="btn btn-green" type="submit">Resim Yorumlat</button>
                 </form>
             </div>
         </div>
     </div>
     """
 
-    return BASE_HTML.replace("%CONTENT%", content)
+    return render_page(content)
 
 
 if __name__ == "__main__":
