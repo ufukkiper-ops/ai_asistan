@@ -65,7 +65,7 @@ def image_file_to_data_url(file_storage):
     return f"data:{mime_type};base64,{encoded}"
 
 
-# f-string çakışmasını önlemek için güvenli HTML şablonu
+# Flask'ın şablon motoruyla çakışmaması için en güvenli HTML şablonu yapısı
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -76,25 +76,31 @@ BASE_HTML = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
-        body {
+        
+        /* Arka planı kesin olarak beyaz yapmak için hem body hem html seviyesinde ezdik */
+        html, body {
             margin: 0;
-            background: #ffffff !important;
-            color: #1e293b !important;
+            padding: 0;
+            background-color: rgb(255, 255, 255) !important;
+            background: rgb(255, 255, 255) !important;
+            color: rgb(30, 41, 59) !important;
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
+        
         a { text-decoration: none; color: inherit; }
         .layout {
             display: flex;
             width: 100%;
             height: 100%;
+            background-color: rgb(255, 255, 255) !important;
         }
         .sidebar {
             width: 280px;
-            background: #f8fafc;
+            background: rgb(248, 250, 252);
             padding: 20px;
-            border-right: 1px solid #e2e8f0;
+            border-right: 1px solid rgb(226, 232, 240);
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -103,20 +109,20 @@ BASE_HTML = """
             margin: 0;
             font-size: 20px;
             font-weight: 600;
-            color: #0284c7;
+            color: rgb(2, 132, 199);
         }
         .user-box {
             padding: 12px;
-            background: #f1f5f9;
+            background: rgb(241, 245, 249);
             border-radius: 12px;
             font-size: 14px;
-            border: 1px solid #e2e8f0;
-            color: #334155;
+            border: 1px solid rgb(226, 232, 240);
+            color: rgb(51, 65, 85);
         }
         .new-chat {
             display: block;
             width: 100%;
-            background: linear-gradient(135deg, #38bdf8, #0284c7);
+            background: linear-gradient(135deg, rgb(56, 189, 248), rgb(2, 132, 199));
             color: white;
             text-align: center;
             padding: 12px;
@@ -136,32 +142,33 @@ BASE_HTML = """
             display: block;
             padding: 12px;
             border-radius: 10px;
-            background: #f1f5f9;
+            background: rgb(241, 245, 249);
             font-size: 14px;
             border: 1px solid transparent;
             transition: all 0.2s;
-            color: #334155;
+            color: rgb(51, 65, 85);
         }
-        .chat-item:hover { background: #e2e8f0; }
+        .chat-item:hover { background: rgb(226, 232, 240); }
         .chat-item.active {
-            background: #3b82f6;
-            border-color: #2563eb;
+            background: rgb(59, 130, 246);
+            border-color: rgb(37, 99, 235);
             color: white;
         }
         .main {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: #ffffff;
+            background-color: rgb(255, 255, 255) !important;
+            background: rgb(255, 255, 255) !important;
         }
         .topbar {
-            background: #f8fafc;
+            background: rgb(248, 250, 252);
             padding: 15px 25px;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid rgb(226, 232, 240);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            color: #334155;
+            color: rgb(51, 65, 85);
         }
         .right-buttons {
             display: flex;
@@ -176,9 +183,9 @@ BASE_HTML = """
             transition: opacity 0.2s;
         }
         .btn:hover { opacity: 0.9; }
-        .btn-blue { background: #38bdf8; color: black; }
-        .btn-red { background: #ef4444; color: white; }
-        .btn-green { background: #10b981; color: white; }
+        .btn-blue { background: rgb(56, 189, 248); color: black; }
+        .btn-red { background: rgb(239, 68, 239); color: white; }
+        .btn-green { background: rgb(16, 185, 129); color: white; }
         
         .messages {
             flex: 1;
@@ -187,7 +194,8 @@ BASE_HTML = """
             display: flex;
             flex-direction: column;
             gap: 16px;
-            background: #ffffff;
+            background-color: rgb(255, 255, 255) !important;
+            background: rgb(255, 255, 255) !important;
         }
         .msg {
             max-width: 75%;
@@ -199,17 +207,17 @@ BASE_HTML = """
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
         }
         .msg-user {
-            background: #0284c7;
+            background: rgb(2, 132, 199);
             color: white;
             align-self: flex-end;
             border-bottom-right-radius: 4px;
         }
         .msg-bot {
-            background: #f1f5f9;
-            color: #1e293b;
+            background: rgb(241, 245, 249);
+            color: rgb(30, 41, 59);
             align-self: flex-start;
             border-bottom-left-radius: 4px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid rgb(226, 232, 240);
         }
         .msg img {
             max-width: 100%;
@@ -218,51 +226,51 @@ BASE_HTML = """
         }
         .bottom {
             padding: 20px;
-            background: #f8fafc;
-            border-top: 1px solid #e2e8f0;
+            background: rgb(248, 250, 252);
+            border-top: 1px solid rgb(226, 232, 240);
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
         .input-container {
             display: flex;
-            background: #ffffff;
+            background: rgb(255, 255, 255);
             border-radius: 14px;
             padding: 6px;
             align-items: center;
-            border: 1px solid #cbd5e1;
+            border: 1px solid rgb(203, 213, 225);
         }
         .input-container input[type="text"] {
             flex: 1;
             background: transparent;
             border: none;
             padding: 10px 15px;
-            color: #1e293b;
+            color: rgb(30, 41, 59);
             font-size: 15px;
             outline: none;
         }
         .card {
             max-width: 400px;
             margin: 100px auto;
-            background: #ffffff;
+            background: rgb(255, 255, 255);
             padding: 30px;
             border-radius: 16px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid rgb(226, 232, 240);
             box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
-            color: #1e293b;
+            color: rgb(30, 41, 59);
         }
         .card input {
             width: 100%;
             padding: 12px;
             margin-bottom: 15px;
-            border: 1px solid #cbd5e1;
-            background: #ffffff;
+            border: 1px solid rgb(203, 213, 225);
+            background: rgb(255, 255, 255);
             border-radius: 10px;
-            color: #1e293b;
+            color: rgb(30, 41, 59);
         }
         .error {
-            color: #7f1d1d;
-            background: #fca5a5;
+            color: rgb(127, 29, 29);
+            background: rgb(252, 165, 165);
             padding: 12px;
             border-radius: 10px;
             margin-bottom: 15px;
@@ -273,10 +281,10 @@ BASE_HTML = """
             gap: 10px;
             align-items: center;
             font-size: 13px;
-            background: #f1f5f9;
+            background: rgb(241, 245, 249);
             padding: 8px 12px;
             border-radius: 10px;
-            color: #334155;
+            color: rgb(51, 65, 85);
         }
         @media (max-width: 768px) {
             .sidebar { display: none; }
@@ -594,8 +602,8 @@ def index():
 
                 <form class="image-bar" method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="image">
-                    <input type="file" name="image" accept="image/*" required style="color:#1e293b; font-size:12px;">
-                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#1e293b; border-radius:5px;">
+                    <input type="file" name="image" accept="image/*" required style="color:rgb(30, 41, 59); font-size:12px;">
+                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:rgb(255, 255, 255); border:1px solid rgb(203, 213, 225); padding:5px; color:rgb(30, 41, 59); border-radius:5px;">
                     <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Resmi Yorumlat</button>
                 </form>
             </div>
