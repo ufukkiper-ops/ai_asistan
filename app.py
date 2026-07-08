@@ -1,10 +1,12 @@
-# mail modülünü en üstte içe aktarıyoruz
+# Gerekli kütüphaneleri ekliyoruz
 from mail import get_last_mails, analyze_mail
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 import os
 import json
 import base64
 from openai import OpenAI
+from pypdf import PdfReader
+import docx
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "gizli123")
@@ -12,16 +14,13 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "gizli123")
 USERS_FILE = "users.json"
 DATA_FILE = "data.json"
 
-
 def ensure_files():
     if not os.path.exists(USERS_FILE):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, ensure_ascii=False, indent=2)
-
 
 def load_users():
     ensure_files()
@@ -31,11 +30,9 @@ def load_users():
     except:
         return []
 
-
 def save_users(users):
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, ensure_ascii=False, indent=2)
-
 
 def load_data():
     ensure_files()
@@ -45,11 +42,9 @@ def load_data():
     except:
         return {}
 
-
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
 
 def get_client():
     api_key = os.getenv("OPENAI_API_KEY")
@@ -57,294 +52,99 @@ def get_client():
         return None
     return OpenAI(api_key=api_key)
 
-
 def image_file_to_data_url(file_storage):
     mime_type = file_storage.mimetype or "image/jpeg"
     raw = file_storage.read()
     encoded = base64.b64encode(raw).decode("utf-8")
     return f"data:{mime_type};base64,{encoded}"
 
+# --- YENİ: DOKÜMAN OKUMA FONKSİYONLARI ---
+def read_pdf(file_storage):
+    try:
+        reader = PdfReader(file_storage)
+        text = ""
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content + "\n"
+        return text.strip()
+    except Exception as e:
+        return f"[PDF Okuma Hatası: {str(e)}]"
 
-# Tarayıcıların zoraki gece modunu devre dışı bırakan kesin şablon
+def read_docx(file_storage):
+    try:
+        doc = docx.Document(file_storage)
+        text = []
+        for para in doc.paragraphs:
+            text.append(para.text)
+        return "\n".join(text).strip()
+    except Exception as e:
+        return f"[Word Okuma Hatası: {str(e)}]"
+# -----------------------------------------
+
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
     <meta name="color-scheme" content="light">
-    
     <title>AI Asistan</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* Cihaz sistem seviyesinde renkleri tersine çevirmesin diye zorunlu kılınan renk kuralları */
         :root {
             color-scheme: light !important;
             --background-color: #ffffff !important;
             --text-color: #0f172a !important;
         }
-
-        * { 
-            box-sizing: border-box; 
-            font-family: 'Inter', sans-serif;
-        }
-        
+        * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
         html, body {
-            margin: 0;
-            padding: 0;
+            margin: 0; padding: 0;
             background-color: #ffffff !important;
-            background: #ffffff !important;
             color: #0f172a !important;
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
+            display: flex; height: 100vh; overflow: hidden;
         }
-        
         a { text-decoration: none; color: inherit; }
-        
-        .layout {
-            display: flex;
-            width: 100%;
-            height: 100%;
-            background-color: #ffffff !important;
-            background: #ffffff !important;
-        }
-        
+        .layout { display: flex; width: 100%; height: 100%; background-color: #ffffff !important; }
         .sidebar {
-            width: 280px;
-            background: #f8fafc !important;
-            padding: 20px;
-            border-right: 1px solid #e2e8f0;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+            width: 280px; background: #f8fafc !important; padding: 20px;
+            border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 15px;
         }
-        
-        .sidebar h2 {
-            margin: 0;
-            font-size: 20px;
-            font-weight: 600;
-            color: #0284c7 !important;
-        }
-        
-        .user-box {
-            padding: 12px;
-            background: #f1f5f9 !important;
-            border-radius: 12px;
-            font-size: 14px;
-            border: 1px solid #e2e8f0;
-            color: #334155 !important;
-        }
-        
-        .new-chat {
-            display: block;
-            width: 100%;
-            background: linear-gradient(135deg, #38bdf8, #0284c7) !important;
-            color: white !important;
-            text-align: center;
-            padding: 12px;
-            border-radius: 12px;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-        
+        .sidebar h2 { margin: 0; font-size: 20px; font-weight: 600; color: #0284c7 !important; }
+        .user-box { padding: 12px; background: #f1f5f9 !important; border-radius: 12px; font-size: 14px; border: 1px solid #e2e8f0; color: #334155 !important; }
+        .new-chat { display: block; width: 100%; background: linear-gradient(135deg, #38bdf8, #0284c7) !important; color: white !important; text-align: center; padding: 12px; border-radius: 12px; font-weight: 600; transition: all 0.2s; }
         .new-chat:hover { opacity: 0.9; transform: translateY(-1px); }
-        
-        .chat-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            overflow-y: auto;
-            flex: 1;
-        }
-        
-        .chat-item {
-            display: block;
-            padding: 12px;
-            border-radius: 10px;
-            background: #f1f5f9 !important;
-            font-size: 14px;
-            border: 1px solid transparent;
-            transition: all 0.2s;
-            color: #334155 !important;
-        }
-        
+        .chat-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; }
+        .chat-item { display: block; padding: 12px; border-radius: 10px; background: #f1f5f9 !important; font-size: 14px; border: 1px solid transparent; transition: all 0.2s; color: #334155 !important; }
         .chat-item:hover { background: #e2e8f0 !important; }
-        
-        .chat-item.active {
-            background: #3b82f6 !important;
-            border-color: #2563eb !important;
-            color: white !important;
-        }
-        
-        .main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background-color: #ffffff !important;
-            background: #ffffff !important;
-        }
-        
-        .topbar {
-            background: #f8fafc !important;
-            padding: 15px 25px;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: #334155 !important;
-        }
-        
-        .right-buttons {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .btn {
-            border: none;
-            border-radius: 10px;
-            padding: 10px 16px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: opacity 0.2s;
-        }
-        
+        .chat-item.active { background: #3b82f6 !important; border-color: #2563eb !important; color: white !important; }
+        .main { flex: 1; display: flex; flex-direction: column; background-color: #ffffff !important; }
+        .topbar { background: #f8fafc !important; padding: 15px 25px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; color: #334155 !important; }
+        .right-buttons { display: flex; gap: 10px; }
+        .btn { border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 500; transition: opacity 0.2s; }
         .btn:hover { opacity: 0.9; }
         .btn-blue { background: #38bdf8 !important; color: black !important; }
         .btn-red { background: #ef4444 !important; color: white !important; }
         .btn-green { background: #10b981 !important; color: white !important; }
-        
-        .messages {
-            flex: 1;
-            padding: 25px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            background-color: #ffffff !important;
-            background: #ffffff !important;
-        }
-        
-        .msg {
-            max-width: 75%;
-            padding: 14px 18px;
-            border-radius: 16px;
-            line-height: 1.6;
-            white-space: pre-wrap;
-            font-size: 15px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        }
-        
-        .msg-user {
-            background: #0284c7 !important;
-            color: white !important;
-            align-self: flex-end;
-            border-bottom-right-radius: 4px;
-        }
-        
-        .msg-user * {
-            color: white !important;
-        }
-        
-        /* Bot mesaj kutusu rengi fildişi/açık gri tonlarında sabitlendi */
-        .msg-bot {
-            background-color: #f1f5f9 !important;
-            background: #f1f5f9 !important;
-            color: #0f172a !important;
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-            border: 1px solid #e2e8f0;
-        }
-        
-        /* Bot mesajının içindeki başlık, düz yazılar, listeler dahil HER ŞEY koyu lacivert/siyah yapılıyor */
-        .msg-bot, .msg-bot *, .bot-text, .messages .msg-bot * {
-            color: #0f172a !important;
-        }
-        
-        .msg img {
-            max-width: 100%;
-            border-radius: 10px;
-            margin-top: 10px;
-        }
-        
-        .bottom {
-            padding: 20px;
-            background: #f8fafc !important;
-            border-top: 1px solid #e2e8f0;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        
-        .input-container {
-            display: flex;
-            background: #ffffff !important;
-            border-radius: 14px;
-            padding: 6px;
-            align-items: center;
-            border: 1px solid #cbd5e1;
-        }
-        
-        .input-container input[type="text"] {
-            flex: 1;
-            background: transparent !important;
-            border: none;
-            padding: 10px 15px;
-            color: #0f172a !important;
-            font-size: 15px;
-            outline: none;
-        }
-        
-        .card {
-            max-width: 400px;
-            margin: 100px auto;
-            background: #ffffff !important;
-            padding: 30px;
-            border-radius: 16px;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
-            color: #0f172a !important;
-        }
-        
-        .card input {
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 15px;
-            border: 1px solid #cbd5e1;
-            background: #ffffff !important;
-            border-radius: 10px;
-            color: #0f172a !important;
-        }
-        
-        .error {
-            color: #7f1d1d !important;
-            background: #fca5a5 !important;
-            padding: 12px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        
-        .image-bar {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            font-size: 13px;
-            background: #f1f5f9 !important;
-            padding: 8px 12px;
-            border-radius: 10px;
-            color: #334155 !important;
-        }
-        
-        @media (max-width: 768px) {
-            .sidebar { display: none; }
-        }
+        .messages { flex: 1; padding: 25px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background-color: #ffffff !important; }
+        .msg { max-width: 75%; padding: 14px 18px; border-radius: 16px; line-height: 1.6; white-space: pre-wrap; font-size: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .msg-user { background: #0284c7 !important; color: white !important; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .msg-user * { color: white !important; }
+        .msg-bot { background-color: #f1f5f9 !important; color: #0f172a !important; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #e2e8f0; }
+        .msg-bot, .msg-bot *, .bot-text, .messages .msg-bot * { color: #0f172a !important; }
+        .msg img { max-width: 100%; border-radius: 10px; margin-top: 10px; }
+        .bottom { padding: 20px; background: #f8fafc !important; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 10px; }
+        .input-container { display: flex; background: #ffffff !important; border-radius: 14px; padding: 6px; align-items: center; border: 1px solid #cbd5e1; }
+        .input-container input[type="text"] { flex: 1; background: transparent !important; border: none; padding: 10px 15px; color: #0f172a !important; font-size: 15px; outline: none; }
+        .card { max-width: 400px; margin: 100px auto; background: #ffffff !important; padding: 30px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); color: #0f172a !important; }
+        .card input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; background: #ffffff !important; border-radius: 10px; color: #0f172a !important; }
+        .error { color: #7f1d1d !important; background: #fca5a5 !important; padding: 12px; border-radius: 10px; margin-bottom: 15px; font-size: 14px; }
+        .image-bar { display: flex; gap: 10px; align-items: center; font-size: 13px; background: #f1f5f9 !important; padding: 8px 12px; border-radius: 10px; color: #334155 !important; }
+        @media (max-width: 768px) { .sidebar { display: none; } }
     </style>
 </head>
 <body>
 {{ content|safe }}
-
 <script>
     const msgDiv = document.querySelector('.messages');
     if(msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
@@ -380,14 +180,11 @@ BASE_HTML = """
         const messagesContainer = document.querySelector('.messages');
         const msgHtml = document.createElement('div');
         msgHtml.className = role === 'user' ? 'msg msg-user' : 'msg msg-bot';
-        
         if(role === 'user') {
             msgHtml.innerHTML = '<b>Sen:</b><br>' + text;
         } else {
-            // JavaScript ile canlı eklenen mesajların sınıfını CSS ile tam uyumlu hale getirdik (bot-text)
             msgHtml.innerHTML = '<b class="bot-text">AI:</b><br><span class="bot-text">' + text + '</span>';
         }
-        
         messagesContainer.appendChild(msgHtml);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
@@ -396,10 +193,8 @@ BASE_HTML = """
 </html>
 """
 
-
 def render_page(content):
     return render_template_string(BASE_HTML, content=content)
-
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -407,7 +202,6 @@ def register():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
-
         if username == "" or password == "":
             error = "Kullanıcı adı ve şifre boş olamaz."
         else:
@@ -416,12 +210,10 @@ def register():
                 if user["username"] == username:
                     error = "Bu kullanıcı adı zaten kullanılıyor."
                     break
-
             if error == "":
                 users.append({"username": username, "password": password})
                 save_users(users)
                 return redirect(url_for("login"))
-
     content = f"""
     <div class="card">
         <h2>Kayıt Ol</h2>
@@ -436,28 +228,23 @@ def register():
     """
     return render_page(content)
 
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
-
         users = load_users()
         found = False
-
         for user in users:
             if user["username"] == username and user["password"] == password:
                 session["user"] = username
                 found = True
                 break
-
         if found:
             return redirect(url_for("index"))
         else:
             error = "Kullanıcı adı veya şifre hatalı."
-
     content = f"""
     <div class="card">
         <h2>Giriş Yap</h2>
@@ -472,71 +259,50 @@ def login():
     """
     return render_page(content)
 
-
 @app.route("/logout")
 def logout():
     session.pop("user", None)
     return redirect(url_for("login"))
 
-
 @app.route("/new_chat")
 def new_chat():
-    if "user" not in session:
-        return redirect(url_for("login"))
-
+    if "user" not in session: return redirect(url_for("login"))
     username = session["user"]
     data = load_data()
-
     if username not in data or not isinstance(data[username], dict):
         data[username] = {"active_chat": "chat1", "chats": {"chat1": []}}
-
     chats = data[username].setdefault("chats", {"chat1": []})
-    
     new_id = f"chat{len(chats) + 1}"
     chats[new_id] = []
     data[username]["active_chat"] = new_id
-
     save_data(data)
     return redirect(url_for("index"))
 
-
 @app.route("/switch/<chat_id>")
 def switch_chat(chat_id):
-    if "user" not in session:
-        return redirect(url_for("login"))
-
+    if "user" not in session: return redirect(url_for("login"))
     username = session["user"]
     data = load_data()
-
     if username in data and "chats" in data[username] and chat_id in data[username]["chats"]:
         data[username]["active_chat"] = chat_id
         save_data(data)
-
     return redirect(url_for("index"))
-
 
 @app.route("/clear_chat", methods=["POST"])
 def clear_chat():
-    if "user" not in session:
-        return redirect(url_for("login"))
-
+    if "user" not in session: return redirect(url_for("login"))
     username = session["user"]
     data = load_data()
-
     if username in data:
         active_chat = data[username].get("active_chat", "chat1")
         if active_chat in data[username]["chats"]:
             data[username]["chats"][active_chat] = []
             save_data(data)
-
     return redirect(url_for("index"))
-
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    if "user" not in session:
-        return redirect(url_for("login"))
-
+    if "user" not in session: return redirect(url_for("login"))
     username = session["user"]
     data = load_data()
 
@@ -570,37 +336,70 @@ def index():
                 gecmis.append({"role": "assistant", "content": cevap})
                 data[username]["chats"][active_chat] = gecmis
                 save_data(data)
-                
-                if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or True:
-                    return jsonify({"status": "success", "answer": cevap})
+                return jsonify({"status": "success", "answer": cevap})
 
-        elif action == "image":
+        elif action == "image":  # Bu alan artık genel dosya/resim yükleme alanı oldu
             uploaded_file = request.files.get("image")
-            prompt = request.form.get("image_prompt", "").strip() or "Bu resmi detaylı yorumla."
+            prompt = request.form.get("image_prompt", "").strip() or "Bu dosyayı detaylı incele ve yorumla."
 
             if uploaded_file and uploaded_file.filename != "":
+                filename = uploaded_file.filename.lower()
+                
                 try:
-                    image_data_url = image_file_to_data_url(uploaded_file)
-                    gecmis.append({
-                        "role": "user",
-                        "content": f"[RESİM] {prompt}",
-                        "image": image_data_url
-                    })
+                    # --- RESİM Mİ DOKÜMAN MI KONTROLÜ ---
+                    if filename.endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
+                        # Gelen dosya resim ise vision modeline gönderiyoruz
+                        image_data_url = image_file_to_data_url(uploaded_file)
+                        gecmis.append({
+                            "role": "user",
+                            "content": f"[RESİM] {prompt}",
+                            "image": image_data_url
+                        })
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "text", "text": prompt},
+                                        {"type": "image_url", "image_url": {"url": image_data_url}}
+                                    ]
+                                }
+                            ]
+                        )
+                        cevap = response.choices[0].message.content
+                        gecmis.append({"role": "assistant", "content": cevap})
 
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt},
-                                    {"type": "image_url", "image_url": {"url": image_data_url}}
-                                ]
-                            }
-                        ]
-                    )
-                    cevap = response.choices[0].message.content
-                    gecmis.append({"role": "assistant", "content": cevap})
+                    elif filename.endswith('.pdf'):
+                        # Gelen dosya PDF ise metni çıkarıyoruz
+                        pdf_text = read_pdf(uploaded_file)
+                        tam_soru = f"Kullanıcı bir PDF dokümanı yükledi. Sorusu: {prompt}\n\nDoküman İçeriği:\n{pdf_text}"
+                        gecmis.append({"role": "user", "content": f"[DOKÜMAN - {uploaded_file.filename}] {prompt}"})
+                        
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "user", "content": tam_soru}]
+                        )
+                        cevap = response.choices[0].message.content
+                        gecmis.append({"role": "assistant", "content": cevap})
+
+                    elif filename.endswith(('.docx', '.doc')):
+                        # Gelen dosya Word ise metni çıkarıyoruz
+                        docx_text = read_docx(uploaded_file)
+                        tam_soru = f"Kullanıcı bir Word dokümanı yükledi. Sorusu: {prompt}\n\nDoküman İçeriği:\n{docx_text}"
+                        gecmis.append({"role": "user", "content": f"[DOKÜMAN - {uploaded_file.filename}] {prompt}"})
+                        
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "user", "content": tam_soru}]
+                        )
+                        cevap = response.choices[0].message.content
+                        gecmis.append({"role": "assistant", "content": cevap})
+                    
+                    else:
+                        cevap = "Desteklenmeyen dosya formatı. Lütfen Resim, PDF veya Word dosyası yükleyin."
+                        gecmis.append({"role": "assistant", "content": cevap})
+
                     data[username]["chats"][active_chat] = gecmis
                     save_data(data)
                 except Exception as e:
@@ -618,7 +417,6 @@ def index():
         role = mesaj.get("role", "assistant")
         content = mesaj.get("content", "")
         css = "msg msg-user" if role == "user" else "msg msg-bot"
-        
         if role == "user":
             messages_html += f'<div class="{css}"><b>Sen:</b><br>{content}</div>'
         else:
@@ -633,7 +431,6 @@ def index():
             <a class="new-chat" href="/new_chat">+ Yeni Sohbet</a>
             <div class="chat-list">{chat_list_html}</div>
         </div>
-
         <div class="main">
             <div class="topbar">
                 <div><b>Aktif Sohbet:</b> {active_chat}</div>
@@ -645,27 +442,24 @@ def index():
                     <a href="/logout"><button class="btn btn-blue">Çıkış</button></a>
                 </div>
             </div>
-
             <div class="messages">{messages_html}</div>
-
             <div class="bottom">
                 <form class="input-container" onsubmit="sendTextMessage(event)">
                     <input id="chat-input" type="text" placeholder="Mesajınızı buraya yazın..." autofocus>
                     <button class="btn btn-blue" type="submit">Gönder</button>
                 </form>
-
+                
                 <form class="image-bar" method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="image">
-                    <input type="file" name="image" accept="image/*" required style="color:#0f172a; font-size:12px;">
-                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#0f172a; border-radius:5px;">
-                    <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Resmi Yorumlat</button>
+                    <input type="file" name="image" accept="image/*,.pdf,.docx" required style="color:#0f172a; font-size:12px;">
+                    <input type="text" name="image_prompt" placeholder="Dosya ile ilgili sorunuz..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#0f172a; border-radius:5px;">
+                    <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Dosyayı Yorumlat</button>
                 </form>
             </div>
         </div>
     </div>
     """
     return render_page(content)
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
