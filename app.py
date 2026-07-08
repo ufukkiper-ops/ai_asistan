@@ -65,72 +65,92 @@ def image_file_to_data_url(file_storage):
     return f"data:{mime_type};base64,{encoded}"
 
 
-# Flask'ın şablon motoruyla çakışmaması için en güvenli HTML şablonu yapısı
+# Tarayıcıların zoraki gece modunu devre dışı bırakan kesin şablon
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <meta name="color-scheme" content="light">
+    
     <title>AI Asistan</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        /* Cihaz sistem seviyesinde renkleri tersine çevirmesin diye zorunlu kılınan renk kuralları */
+        :root {
+            color-scheme: light !important;
+            --background-color: #ffffff !important;
+            --text-color: #0f172a !important;
+        }
+
+        * { 
+            box-sizing: border-box; 
+            font-family: 'Inter', sans-serif;
+        }
         
-        /* Arka planı kesin olarak beyaz yapmak için hem body hem html seviyesinde ezdik */
         html, body {
             margin: 0;
             padding: 0;
-            background-color: rgb(255, 255, 255) !important;
-            background: rgb(255, 255, 255) !important;
-            color: rgb(30, 41, 59) !important;
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
         
         a { text-decoration: none; color: inherit; }
+        
         .layout {
             display: flex;
             width: 100%;
             height: 100%;
-            background-color: rgb(255, 255, 255) !important;
+            background-color: #ffffff !important;
+            background: #ffffff !important;
         }
+        
         .sidebar {
             width: 280px;
-            background: rgb(248, 250, 252);
+            background: #f8fafc !important;
             padding: 20px;
-            border-right: 1px solid rgb(226, 232, 240);
+            border-right: 1px solid #e2e8f0;
             display: flex;
             flex-direction: column;
             gap: 15px;
         }
+        
         .sidebar h2 {
             margin: 0;
             font-size: 20px;
             font-weight: 600;
-            color: rgb(2, 132, 199);
+            color: #0284c7 !important;
         }
+        
         .user-box {
             padding: 12px;
-            background: rgb(241, 245, 249);
+            background: #f1f5f9 !important;
             border-radius: 12px;
             font-size: 14px;
-            border: 1px solid rgb(226, 232, 240);
-            color: rgb(51, 65, 85);
+            border: 1px solid #e2e8f0;
+            color: #334155 !important;
         }
+        
         .new-chat {
             display: block;
             width: 100%;
-            background: linear-gradient(135deg, rgb(56, 189, 248), rgb(2, 132, 199));
-            color: white;
+            background: linear-gradient(135deg, #38bdf8, #0284c7) !important;
+            color: white !important;
             text-align: center;
             padding: 12px;
             border-radius: 12px;
             font-weight: 600;
             transition: all 0.2s;
         }
+        
         .new-chat:hover { opacity: 0.9; transform: translateY(-1px); }
+        
         .chat-list {
             display: flex;
             flex-direction: column;
@@ -138,42 +158,49 @@ BASE_HTML = """
             overflow-y: auto;
             flex: 1;
         }
+        
         .chat-item {
             display: block;
             padding: 12px;
             border-radius: 10px;
-            background: rgb(241, 245, 249);
+            background: #f1f5f9 !important;
             font-size: 14px;
             border: 1px solid transparent;
             transition: all 0.2s;
-            color: rgb(51, 65, 85);
+            color: #334155 !important;
         }
-        .chat-item:hover { background: rgb(226, 232, 240); }
+        
+        .chat-item:hover { background: #e2e8f0 !important; }
+        
         .chat-item.active {
-            background: rgb(59, 130, 246);
-            border-color: rgb(37, 99, 235);
-            color: white;
+            background: #3b82f6 !important;
+            border-color: #2563eb !important;
+            color: white !important;
         }
+        
         .main {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background-color: rgb(255, 255, 255) !important;
-            background: rgb(255, 255, 255) !important;
+            background-color: #ffffff !important;
+            background: #ffffff !important;
         }
+        
         .topbar {
-            background: rgb(248, 250, 252);
+            background: #f8fafc !important;
             padding: 15px 25px;
-            border-bottom: 1px solid rgb(226, 232, 240);
+            border-bottom: 1px solid #e2e8f0;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            color: rgb(51, 65, 85);
+            color: #334155 !important;
         }
+        
         .right-buttons {
             display: flex;
             gap: 10px;
         }
+        
         .btn {
             border: none;
             border-radius: 10px;
@@ -182,10 +209,11 @@ BASE_HTML = """
             font-weight: 500;
             transition: opacity 0.2s;
         }
+        
         .btn:hover { opacity: 0.9; }
-        .btn-blue { background: rgb(56, 189, 248); color: black; }
-        .btn-red { background: rgb(239, 68, 239); color: white; }
-        .btn-green { background: rgb(16, 185, 129); color: white; }
+        .btn-blue { background: #38bdf8 !important; color: black !important; }
+        .btn-red { background: #ef4444 !important; color: white !important; }
+        .btn-green { background: #10b981 !important; color: white !important; }
         
         .messages {
             flex: 1;
@@ -194,9 +222,10 @@ BASE_HTML = """
             display: flex;
             flex-direction: column;
             gap: 16px;
-            background-color: rgb(255, 255, 255) !important;
-            background: rgb(255, 255, 255) !important;
+            background-color: #ffffff !important;
+            background: #ffffff !important;
         }
+        
         .msg {
             max-width: 75%;
             padding: 14px 18px;
@@ -206,26 +235,31 @@ BASE_HTML = """
             font-size: 15px;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
         }
+        
         .msg-user {
-            background: rgb(2, 132, 199);
+            background: #0284c7 !important;
             color: white !important;
             align-self: flex-end;
             border-bottom-right-radius: 4px;
         }
         
-        /* Bot kutusunu ve içindeki ham metin dahil her şeyi siyaha zorluyoruz */
-        .msg-bot {
-            background-color: rgb(241, 245, 249) !important;
-            background: rgb(241, 245, 249) !important;
-            color: rgb(15, 23, 42) !important;
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-            border: 1px solid rgb(226, 232, 240);
+        .msg-user * {
+            color: white !important;
         }
         
-        /* Kutu içindeki tüm alt elemanlar, yazılar ve düz metinler için renk sabitleme */
-        .msg-bot, .msg-bot *, .bot-text-color {
-            color: rgb(15, 23, 42) !important;
+        /* Bot mesaj kutusu rengi fildişi/açık gri tonlarında sabitlendi */
+        .msg-bot {
+            background-color: #f1f5f9 !important;
+            background: #f1f5f9 !important;
+            color: #0f172a !important;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        /* Bot mesajının içindeki başlık, düz yazılar, listeler dahil HER ŞEY koyu lacivert/siyah yapılıyor */
+        .msg-bot, .msg-bot *, .bot-text, .messages .msg-bot * {
+            color: #0f172a !important;
         }
         
         .msg img {
@@ -233,68 +267,76 @@ BASE_HTML = """
             border-radius: 10px;
             margin-top: 10px;
         }
+        
         .bottom {
             padding: 20px;
-            background: rgb(248, 250, 252);
-            border-top: 1px solid rgb(226, 232, 240);
+            background: #f8fafc !important;
+            border-top: 1px solid #e2e8f0;
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
+        
         .input-container {
             display: flex;
-            background: rgb(255, 255, 255);
+            background: #ffffff !important;
             border-radius: 14px;
             padding: 6px;
             align-items: center;
-            border: 1px solid rgb(203, 213, 225);
+            border: 1px solid #cbd5e1;
         }
+        
         .input-container input[type="text"] {
             flex: 1;
-            background: transparent;
+            background: transparent !important;
             border: none;
             padding: 10px 15px;
-            color: rgb(30, 41, 59) !important;
+            color: #0f172a !important;
             font-size: 15px;
             outline: none;
         }
+        
         .card {
             max-width: 400px;
             margin: 100px auto;
-            background: rgb(255, 255, 255);
+            background: #ffffff !important;
             padding: 30px;
-            border-radius: 166px;
-            border: 1px solid rgb(226, 232, 240);
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
             box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
-            color: rgb(30, 41, 59);
+            color: #0f172a !important;
         }
+        
         .card input {
             width: 100%;
             padding: 12px;
             margin-bottom: 15px;
-            border: 1px solid rgb(203, 213, 225);
-            background: rgb(255, 255, 255);
+            border: 1px solid #cbd5e1;
+            background: #ffffff !important;
             border-radius: 10px;
-            color: rgb(30, 41, 59);
+            color: #0f172a !important;
         }
+        
         .error {
-            color: rgb(127, 29, 29);
-            background: rgb(252, 165, 165);
+            color: #7f1d1d !important;
+            background: #fca5a5 !important;
             padding: 12px;
             border-radius: 10px;
             margin-bottom: 15px;
             font-size: 14px;
         }
+        
         .image-bar {
             display: flex;
             gap: 10px;
             align-items: center;
             font-size: 13px;
-            background: rgb(241, 245, 249);
+            background: #f1f5f9 !important;
             padding: 8px 12px;
             border-radius: 10px;
-            color: rgb(51, 65, 85);
+            color: #334155 !important;
         }
+        
         @media (max-width: 768px) {
             .sidebar { display: none; }
         }
@@ -339,12 +381,12 @@ BASE_HTML = """
         const msgHtml = document.createElement('div');
         msgHtml.className = role === 'user' ? 'msg msg-user' : 'msg msg-bot';
         
-        let titleText = 'AI';
         if(role === 'user') {
-            titleText = 'Sen';
+            msgHtml.innerHTML = '<b>Sen:</b><br>' + text;
+        } else {
+            msgHtml.innerHTML = '<b class="bot-text">AI:</b><br><span class="bot-text">' + text + '</span>';
         }
         
-        msgHtml.innerHTML = '<b class="bot-text-color">' + titleText + ':</b><br><span class="bot-text-color">' + text + '</span>';
         messagesContainer.appendChild(msgHtml);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
@@ -575,11 +617,12 @@ def index():
         role = mesaj.get("role", "assistant")
         content = mesaj.get("content", "")
         css = "msg msg-user" if role == "user" else "msg msg-bot"
-        title = "Sen" if role == "user" else "AI"
-        extra_image = f'<br><img src="{mesaj["image"]}">' if "image" in mesaj and mesaj["image"] else ""
-
-        # Hem eski mesajlarda hem yeni mesajlarda yazıyı span içine alarak rengini garantiledik
-        messages_html += f'<div class="{css}"><b class="bot-text-color">{title}:</b><br><span class="bot-text-color">{content}</span>{extra_image}</div>'
+        
+        if role == "user":
+            messages_html += f'<div class="{css}"><b>Sen:</b><br>{content}</div>'
+        else:
+            extra_image = f'<br><img src="{mesaj["image"]}">' if "image" in mesaj and mesaj["image"] else ""
+            messages_html += f'<div class="{css}"><b class="bot-text">AI:</b><br><span class="bot-text">{content}</span>{extra_image}</div>'
 
     content = f"""
     <div class="layout">
@@ -612,8 +655,8 @@ def index():
 
                 <form class="image-bar" method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="image">
-                    <input type="file" name="image" accept="image/*" required style="color:rgb(30, 41, 59); font-size:12px;">
-                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:rgb(255, 255, 255); border:1px solid rgb(203, 213, 225); padding:5px; color:rgb(30, 41, 59); border-radius:5px;">
+                    <input type="file" name="image" accept="image/*" required style="color:#0f172a; font-size:12px;">
+                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#0f172a; border-radius:5px;">
                     <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Resmi Yorumlat</button>
                 </form>
             </div>
