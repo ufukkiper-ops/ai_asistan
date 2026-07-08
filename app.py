@@ -65,7 +65,7 @@ def image_file_to_data_url(file_storage):
     return f"data:{mime_type};base64,{encoded}"
 
 
-# f-string çakışmasını önlemek için güvenli HTML şablonu
+# Flask'ın şablon motoruyla çakışmaması için en güvenli HTML şablonu yapısı
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -213,15 +213,18 @@ BASE_HTML = """
             border-bottom-right-radius: 4px;
         }
         
-        /* Bot mesaj kutusunun rengini ve içindeki her türlü yazının (b, p, li) siyah olmasını garantiliyoruz */
+        /* Bot kutusunu ve içindeki ham metin dahil her şeyi siyaha zorluyoruz */
         .msg-bot {
+            background-color: rgb(241, 245, 249) !important;
             background: rgb(241, 245, 249) !important;
             color: rgb(15, 23, 42) !important;
             align-self: flex-start;
             border-bottom-left-radius: 4px;
             border: 1px solid rgb(226, 232, 240);
         }
-        .msg-bot * {
+        
+        /* Kutu içindeki tüm alt elemanlar, yazılar ve düz metinler için renk sabitleme */
+        .msg-bot, .msg-bot *, .bot-text-color {
             color: rgb(15, 23, 42) !important;
         }
         
@@ -251,7 +254,7 @@ BASE_HTML = """
             background: transparent;
             border: none;
             padding: 10px 15px;
-            color: rgb(30, 41, 59);
+            color: rgb(30, 41, 59) !important;
             font-size: 15px;
             outline: none;
         }
@@ -260,7 +263,7 @@ BASE_HTML = """
             margin: 100px auto;
             background: rgb(255, 255, 255);
             padding: 30px;
-            border-radius: 16px;
+            border-radius: 166px;
             border: 1px solid rgb(226, 232, 240);
             box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
             color: rgb(30, 41, 59);
@@ -341,7 +344,7 @@ BASE_HTML = """
             titleText = 'Sen';
         }
         
-        msgHtml.innerHTML = '<b>' + titleText + ':</b><br>' + text;
+        msgHtml.innerHTML = '<b class="bot-text-color">' + titleText + ':</b><br><span class="bot-text-color">' + text + '</span>';
         messagesContainer.appendChild(msgHtml);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
@@ -575,7 +578,8 @@ def index():
         title = "Sen" if role == "user" else "AI"
         extra_image = f'<br><img src="{mesaj["image"]}">' if "image" in mesaj and mesaj["image"] else ""
 
-        messages_html += f'<div class="{css}"><b>{title}:</b><br>{content}{extra_image}</div>'
+        # Hem eski mesajlarda hem yeni mesajlarda yazıyı span içine alarak rengini garantiledik
+        messages_html += f'<div class="{css}"><b class="bot-text-color">{title}:</b><br><span class="bot-text-color">{content}</span>{extra_image}</div>'
 
     content = f"""
     <div class="layout">
