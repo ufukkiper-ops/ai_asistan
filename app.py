@@ -77,8 +77,12 @@ BASE_HTML = """
     <style>
         * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
         body {
-            background-color: #ffffff !important;
-            color: #000000 !important;
+            margin: 0;
+            background: #ffffff !important;
+            color: #1e293b !important;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
         }
         a { text-decoration: none; color: inherit; }
         .layout {
@@ -283,11 +287,9 @@ BASE_HTML = """
 {{ content|safe }}
 
 <script>
-    // Sayfa yüklendiğinde mesajları en aşağı kaydır
     const msgDiv = document.querySelector('.messages');
     if(msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
 
-    // AJAX/Fetch ile Sayfa Yenilenmeden Anlık Mesaj Gönderme Teknolojisi
     async function sendTextMessage(event) {
         event.preventDefault();
         const input = document.getElementById('chat-input');
@@ -295,8 +297,6 @@ BASE_HTML = """
         if(!msg) return;
 
         input.value = '';
-
-        // Kullanıcı mesajını ekrana ekle
         appendMessage('user', msg);
 
         try {
@@ -321,7 +321,7 @@ BASE_HTML = """
         const messagesContainer = document.querySelector('.messages');
         const msgHtml = document.createElement('div');
         msgHtml.className = role === 'user' ? 'msg msg-user' : 'msg msg-bot';
-        msgHtml.innerHTML = `<b>${role === 'user' ? 'Sen' : 'AI'}:</b><br>${text}`;
+        msgHtml.innerHTML = `<b>\${role === 'user' ? 'Sen' : 'AI'}:</b><br>\${text}`;
         messagesContainer.appendChild(msgHtml);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
@@ -488,7 +488,6 @@ def index():
         if client is None:
             return jsonify({"status": "error", "error": "Sunucuda OPENAI_API_KEY ayarlı değil."}), 400
 
-        # TEXT MESAJI (AJAX Desteği ile Akıcı Hale Getirildi)
         if action == "text":
             soru = request.form.get("soru", "").strip()
             if soru != "":
@@ -504,13 +503,11 @@ def index():
 
                 gecmis.append({"role": "assistant", "content": cevap})
                 data[username]["chats"][active_chat] = gecmis
-                data[username]["chats"][active_chat] = gecmis
                 save_data(data)
                 
                 if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or True:
                     return jsonify({"status": "success", "answer": cevap})
 
-        # GÖRSEL ANALİZİ (Doğru OpenAI API Standardına Güncellendi)
         elif action == "image":
             uploaded_file = request.files.get("image")
             prompt = request.form.get("image_prompt", "").strip() or "Bu resmi detaylı yorumla."
@@ -545,7 +542,6 @@ def index():
                 
                 return redirect(url_for("index"))
 
-    # HTML render kısımları
     chat_list_html = "".join([
         f'<a class="chat-item {"active" if cid == active_chat else ""}" href="/switch/{cid}">{cid}</a>'
         for cid in chats.keys()
