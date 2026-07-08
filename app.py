@@ -65,7 +65,7 @@ def image_file_to_data_url(file_storage):
     return f"data:{mime_type};base64,{encoded}"
 
 
-# Arka plan tamamen beyaz (#ffffff) olarak güncellendi, yazı renkleri siyah yapıldı.
+# f-string çakışmasını önlemek için güvenli HTML şablonu
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -321,7 +321,13 @@ BASE_HTML = """
         const messagesContainer = document.querySelector('.messages');
         const msgHtml = document.createElement('div');
         msgHtml.className = role === 'user' ? 'msg msg-user' : 'msg msg-bot';
-        msgHtml.innerHTML = `<b>\${role === 'user' ? 'Sen' : 'AI'}:</b><br>\${text}`;
+        
+        let titleText = 'AI';
+        if(role === 'user') {
+            titleText = 'Sen';
+        }
+        
+        msgHtml.innerHTML = '<b>' + titleText + ':</b><br>' + text;
         messagesContainer.appendChild(msgHtml);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
