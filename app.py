@@ -1,85 +1,63 @@
-from mail import get_last_mails, analyze_mail, send_reply_mail
+from mail import get_last_mails, analyze_mail
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 import os
 import json
 import base64
 from openai import OpenAI
+from pypdf import PdfReader
+import docx
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "gizli123")
-
-USERS_FILE = "users.json"
-DATA_FILE = "data.json"
-
-def ensure_files():
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, ensure_ascii=False, indent=2)
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f, ensure_ascii=False, indent=2)
-
-def load_users():
-    ensure_files()
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
-def load_data():
-    ensure_files()
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def get_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return None
-    return OpenAI(api_key=api_key)
-
-def image_file_to_data_url(file_storage):
-    mime_type = file_storage.mimetype or "image/jpeg"
-    raw = file_storage.read()
+@@ -58,30 +55,6 @@
     encoded = base64.b64encode(raw).decode("utf-8")
     return f"data:{mime_type};base64,{encoded}"
+
+# --- YENİ: DOKÜMAN OKUMA FONKSİYONLARI ---
+def read_pdf(file_storage):
+    try:
+        reader = PdfReader(file_storage)
+        text = ""
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content + "\n"
+        return text.strip()
+    except Exception as e:
+        return f"[PDF Okuma Hatası: {str(e)}]"
+
+def read_docx(file_storage):
+    try:
+        doc = docx.Document(file_storage)
+        text = []
+        for para in doc.paragraphs:
+            text.append(para.text)
+        return "\n".join(text).strip()
+    except Exception as e:
+        return f"[Word Okuma Hatası: {str(e)}]"
+# -----------------------------------------
 
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="color-scheme" content="light">
+@@ -92,15 +65,12 @@
     
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=3">
-    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=3">
-    <link rel="apple-touch-icon" sizes="192x192" href="/static/icon.png?v=3">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+    
+    <link rel="apple-touch-icon" sizes="192x192" href="/static/icon.png">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     
-    <title>KipGPT</title>
+    <title>AI Asistan</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
+        /* CSS kodların aynen kalıyor... */
         :root {
             color-scheme: light !important;
             --background-color: #ffffff !important;
-            --text-color: #0f172a !important;
-        }
-        * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
-        html, body {
-            margin: 0; padding: 0;
-            background-color: #ffffff !important;
+@@ -113,6 +83,46 @@
             color: #0f172a !important;
             display: flex; height: 100vh; overflow: hidden;
         }
@@ -126,244 +104,113 @@ BASE_HTML = """
 {{ content|safe }}
 <script>
     const msgDiv = document.querySelector('.messages');
-    if(msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
+@@ -307,68 +317,32 @@
+                save_data(data)
+                return jsonify({"status": "success", "answer": cevap})
 
-    async function sendTextMessage(event) {
-        event.preventDefault();
-        const input = document.getElementById('chat-input');
-        const msg = input.value.trim();
-        if(!msg) return;
+        elif action == "image":  # Bu alan artık genel dosya/resim yükleme alanı oldu
+        elif action == "image":
+            uploaded_file = request.files.get("image")
+            prompt = request.form.get("image_prompt", "").strip() or "Bu dosyayı detaylı incele ve yorumla."
+            prompt = request.form.get("image_prompt", "").strip() or "Bu resmi detaylı yorumla."
 
-        input.value = '';
-        appendMessage('user', msg);
-
-        try {
-            const formData = new FormData();
-            formData.append('action', 'text');
-            formData.append('soru', msg);
-
-            const response = await fetch('/', { method: 'POST', body: formData });
-            const data = await response.json();
-
-            if(data.status === 'success') {
-                appendMessage('bot', data.answer);
-            } else {
-                appendMessage('bot', 'Bir hata oluştu: ' + data.error);
-            }
-        } catch(e) {
-            appendMessage('bot', 'Bağlantı hatası gerçekleşti.');
-        }
-    }
-
-    function appendMessage(role, text) {
-        const messagesContainer = document.querySelector('.messages');
-        const msgHtml = document.createElement('div');
-        msgHtml.className = role === 'user' ? 'msg msg-user' : 'msg msg-bot';
-        if(role === 'user') {
-            msgHtml.innerHTML = '<b>Sen:</b><br>' + text;
-        } else {
-            msgHtml.innerHTML = '<b class="bot-text">AI:</b><br><span class="bot-text">' + text + '</span>';
-        }
-        messagesContainer.appendChild(msgHtml);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-</script>
-</body>
-</html>
-"""
-
-def render_page(content):
-    return render_template_string(BASE_HTML, content=content)
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    error = ""
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        
-        if not username or not password:
-            error = "Kullanıcı adı ve şifre boş olamaz."
-        else:
-            users = load_users()
-            if any(u["username"] == username for u in users):
-                error = "Bu kullanıcı adı zaten kullanılıyor."
-            else:
-                users.append({"username": username, "password": password})
-                save_users(users)
-                return redirect(url_for("login"))
+            if uploaded_file and uploaded_file.filename != "":
+                filename = uploaded_file.filename.lower()
                 
-    return render_page(f"<div class='card'><h2>Kayıt Ol</h2>{f'<div class=\"error\">{error}</div>' if error else ''}<form method='post'><input name='username' placeholder='Kullanıcı adı'><input name='password' type='password' placeholder='Şifre'><button class='btn-blue' type='submit'>Kayıt Ol</button></form></div>")
+                try:
+                    # --- RESİM Mİ DOKÜMAN MI KONTROLÜ ---
+                    if filename.endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
+                        # Gelen dosya resim ise vision modeline gönderiyoruz
+                        image_data_url = image_file_to_data_url(uploaded_file)
+                        gecmis.append({
+                            "role": "user",
+                            "content": f"[RESİM] {prompt}",
+                            "image": image_data_url
+                        })
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "text", "text": prompt},
+                                        {"type": "image_url", "image_url": {"url": image_data_url}}
+                                    ]
+                                }
+                            ]
+                        )
+                        cevap = response.choices[0].message.content
+                        gecmis.append({"role": "assistant", "content": cevap})
 
-# --- 2. AI İŞLEMLERİ İÇİN YENİ ROTA ---
-@app.route("/ai_islem", methods=["POST"])
-def ai_islem():
-    # Burada 'islem' değişkenini formdan güvenle alıyoruz
-    islem = request.form.get("islem")
-    # Diğer gerekli verileri al
-    sender = request.form.get("sender", "")
-    subject = request.form.get("subject", "")
-    content = request.form.get("content", "")
-    user_instruction = request.form.get("user_instruction", "")
-    
-    client = get_client()
-    if not client: return "API Key hatası", 500
-    
-    # AI mantığını buraya taşıdık
-    prompt = f"Gelen Mail: {sender} | Konu: {subject} | İçerik: {content}"
-    if islem == "olustur":
-        prompt += f"\nTalimat: {user_instruction}\nSadece maili yaz."
-    
-    response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
-    return response.choices[0].message.content
+                    elif filename.endswith('.pdf'):
+                        # Gelen dosya PDF ise metni çıkarıyoruz
+                        pdf_text = read_pdf(uploaded_file)
+                        tam_soru = f"Kullanıcı bir PDF dokümanı yükledi. Sorusu: {prompt}\n\nDoküman İçeriği:\n{pdf_text}"
+                        gecmis.append({"role": "user", "content": f"[DOKÜMAN - {uploaded_file.filename}] {prompt}"})
+                        
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "user", "content": tam_soru}]
+                        )
+                        cevap = response.choices[0].message.content
+                        gecmis.append({"role": "assistant", "content": cevap})
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    return render_page("<h2>Giriş Yap</h2>...")
+                    elif filename.endswith(('.docx', '.doc')):
+                        # Gelen dosya Word ise metni çıkarıyoruz
+                        docx_text = read_docx(uploaded_file)
+                        tam_soru = f"Kullanıcı bir Word dokümanı yükledi. Sorusu: {prompt}\n\nDoküman İçeriği:\n{docx_text}"
+                        gecmis.append({"role": "user", "content": f"[DOKÜMAN - {uploaded_file.filename}] {prompt}"})
+                        
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "user", "content": tam_soru}]
+                        )
+                        cevap = response.choices[0].message.content
+                        gecmis.append({"role": "assistant", "content": cevap})
+                    
+                    else:
+                        cevap = "Desteklenmeyen dosya formatı. Lütfen Resim, PDF veya Word dosyası yükleyin."
+                        gecmis.append({"role": "assistant", "content": cevap})
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    error = ""
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        users = load_users()
-        found = False
-        for user in users:
-            if user["username"] == username and user["password"] == password:
-                session["user"] = username
-                found = True
-                break
-        if found:
-            return redirect(url_for("home"))
-        else:
-            error = "Kullanıcı adı veya şifre hatalı."
-    content = f"""
-    <div class="card">
-        <h2>Giriş Yap</h2>
-        {"<div class='error'>" + error + "</div>" if error else ""}
-        <form method="post">
-            <input name="username" placeholder="Kullanıcı adı">
-            <input name="password" type="password" placeholder="Şifre">
-            <button class="btn btn-blue" type="submit" style="width:100%;">Giriş Yap</button>
-        </form>
-        <p style="font-size:14px; text-align:center;">Hesabın yok mu? <a href="/register" style="color:#0284c7;">Kayıt Ol</a></p>
+                    image_data_url = image_file_to_data_url(uploaded_file)
+                    gecmis.append({
+                        "role": "user",
+                        "content": f"[RESİM] {prompt}",
+                        "image": image_data_url
+                    })
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {"type": "image_url", "image_url": {"url": image_data_url}}
+                                ]
+                            }
+                        ]
+                    )
+                    cevap = response.choices[0].message.content
+                    gecmis.append({"role": "assistant", "content": cevap})
+                    data[username]["chats"][active_chat] = gecmis
+                    save_data(data)
+                except Exception as e:
+@@ -420,15 +394,15 @@
+                
+                <form class="image-bar" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="image">
+                    <input type="file" name="image" accept="image/*,.pdf,.docx" required style="color:#0f172a; font-size:12px;">
+                    <input type="text" name="image_prompt" placeholder="Dosya ile ilgili sorunuz..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#0f172a; border-radius:5px;">
+                    <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Dosyayı Yorumlat</button>
+                    <input type="file" name="image" accept="image/*" required style="color:#0f172a; font-size:12px;">
+                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#0f172a; border-radius:5px;">
+                    <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Resmi Yorumlat</button>
+                </form>
+            </div>
+        </div>
     </div>
     """
     return render_page(content)
 
-@app.route("/logout")
-def logout():
-    session.pop("user", None)
-    return redirect(url_for("login"))
-
-@app.route("/new_chat")
-def new_chat():
-    if "user" not in session: return redirect(url_for("login"))
-    username = session["user"]
-    data = load_data()
-    if username not in data or not isinstance(data[username], dict):
-        data[username] = {"active_chat": "chat1", "chats": {"chat1": []}}
-    chats = data[username].setdefault("chats", {"chat1": []})
-    new_id = f"chat{len(chats) + 1}"
-    chats[new_id] = []
-    data[username]["active_chat"] = new_id
-    save_data(data)
-    return redirect(url_for("home"))
-
-@app.route("/switch/<chat_id>")
-def switch_chat(chat_id):
-    if "user" not in session: return redirect(url_for("login"))
-    username = session["user"]
-    data = load_data()
-    if username in data and "chats" in data[username] and chat_id in data[username]["chats"]:
-        data[username]["active_chat"] = chat_id
-        save_data(data)
-    return redirect(url_for("index"))
-
-@app.route("/clear_chat", methods=["POST"])
-def clear_chat():
-    if "user" not in session: return redirect(url_for("login"))
-    username = session["user"]
-    data = load_data()
-    if username in data:
-        active_chat = data[username].get("active_chat", "chat1")
-        if active_chat in data[username]["chats"]:
-            data[username]["chats"][active_chat] = []
-            save_data(data)
-    return redirect(url_for("index"))
-
-@app.route("/mail", methods=["GET", "POST"])
-def get_last_mails(count=5):
-    mail = connect_mail()
-    _, messages = mail.search(None, "ALL")
-    mail_ids = messages[0].split()
-
-    result = []
-
-    for i in reversed(mail_ids[-count:]):
-        try:
-            _, msg_data = mail.fetch(i, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
-
-            # 🛠️ Konu Başlığı Çözümü (Gelişmiş UTF-8 Koruma)
-            subject = ""
-            if msg["Subject"]:
-                subject_parts = decode_header(msg["Subject"])
-                for part, enc in subject_parts:
-                    if isinstance(part, bytes):
-                        subject += part.decode(enc if enc and enc != "unknown-8bit" else "utf-8", errors="replace")
-                    else:
-                        subject += str(part)
-            else:
-                subject = "Konu Yok"
-
-            # 🛠️ Gönderici Çözümü (Gelişmiş UTF-8 Koruma)
-            from_text = ""
-            if msg["From"]:
-                from_parts = decode_header(msg["From"])
-                for part, enc in from_parts:
-                    if isinstance(part, bytes):
-                        from_text += part.decode(enc if enc and enc != "unknown-8bit" else "utf-8", errors="replace")
-                    else:
-                        from_text += str(part)
-            else:
-                from_text = "Bilinmeyen Gönderici"
-            
-            import re
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+', from_text)
-            sender_email = email_match.group(0) if email_match else from_text
-
-            # 🛠️ İçerik Çözümü (Baytları Doğrudan UTF-8'e Zorlama)
-            body = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            body = payload.decode(charset, errors="replace")
-                        break
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    charset = msg.get_content_charset() or "utf-8"
-                    body = payload.decode(charset, errors="replace")
-
-            result.append({
-                "id": i.decode(),
-                "subject": subject.strip(),
-                "sender_display": from_text.strip(),
-                "sender": sender_email.strip(),
-                "content": body.strip()[:1000]
-            })
-        except Exception as e:
-            print(f"Mail ayrıştırma hatası: {e}")
-            continue
-
-    return result
-
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
-    app.run(host="0.0.0.0", port=port, debug=True)
