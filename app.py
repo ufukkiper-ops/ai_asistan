@@ -557,17 +557,18 @@ def index():
                     <a href="/logout"><button class="btn btn-blue">Çıkış</button></a>
                 </div>
             </div>
+            
             <div class="messages">{messages_html}</div>
+
             <div class="bottom">
-                <form class="input-container" onsubmit="sendTextMessage(event)">
-                    <input id="chat-input" type="text" placeholder="Mesajınızı buraya yazın..." autofocus>
+                <form class="input-container" method="post" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 8px;">
+                    
+                    <label for="file-input" style="cursor: pointer; font-size: 28px; color: #3b82f6; font-weight: bold; padding: 0 5px;">+</label>
+                    <input id="file-input" type="file" name="image" accept="image/*, application/pdf" style="display: none;">
+                    
+                    <input id="chat-input" type="text" name="message" placeholder="Mesajınızı veya sorunuzu yazın..." style="flex-grow: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 5px;" autofocus>
+                    
                     <button class="btn btn-blue" type="submit">Gönder</button>
-                </form>
-                <form class="image-bar" method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="image">
-                    <input type="file" name="image" accept="image/*" required style="color:#0f172a; font-size:12px;">
-                    <input type="text" name="image_prompt" placeholder="Resim sorusu..." style="background:#ffffff; border:1px solid #cbd5e1; padding:5px; color:#0f172a; border-radius:5px;">
-                    <button class="btn btn-green" type="submit" style="padding:5px 10px; font-size:12px;">Resmi Yorumlat</button>
                 </form>
             </div>
         </div>
