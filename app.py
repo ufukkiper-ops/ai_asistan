@@ -576,4 +576,6 @@ def index():
     return render_page(content)
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5001))
+    # Render'ın verdiği PORT'u kullan, yoksa 10000 kullan
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
