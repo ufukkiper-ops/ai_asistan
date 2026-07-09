@@ -36,25 +36,48 @@ def get_last_mails(count=5):
             raw = msg_data[0][1]
             msg = email.message_from_bytes(raw)
 
-            subject, _ = decode_header(msg["Subject"])[0]
+            # 🛠️ Konu Başlığı Çözümü
+            subject, encoding = decode_header(msg["Subject"])[0]
             if isinstance(subject, bytes):
-                subject = subject.decode(errors="ignore")
+                subject = subject.decode(encoding if encoding else "utf-8", errors="ignore")
 
-            from_ = msg.get("From")
+            # 🛠️ Gönderici (Kimden) Çözümü - Bozuk görünen yer burasıydı
+            from_raw = msg.get("From")
+            from_parts = decode_header(from_raw)
+            from_text = ""
+            for part, enc in from_parts:
+                if isinstance(part, bytes):
+                    from_text += part.decode(enc if enc else "utf-8", errors="ignore")
+                else:
+                    from_text += str(part)
+            
+            # E-posta adresini saf halde temizlemek için (örn: "İsim <mail@mail.com>" -> "mail@mail.com")
+            import re
+            email_match = re.search(r'[\w\.-]+@[\w\.-]+', from_text)
+            sender_email = email_match.group(0) if email_match else from_text
 
+            # 🛠️ İçerik Çözümü
             body = ""
             if msg.is_multipart():
                 for part in msg.walk():
                     if part.get_content_type() == "text/plain":
-                        body = part.get_payload(decode=True).decode(errors="ignore")
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            body = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
                         break
             else:
-                body = msg.get_payload(decode=True).decode(errors="ignore")
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    body = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+
+            # Metni temizleme ve kırpma
+            body = body.strip()
 
             result.append({
                 "id": i.decode(),
                 "subject": subject,
-                "sender": from_,
+                "sender_display": from_text, # Ekranda güzel görünen isim
+                "sender": sender_email,      # Arka planda mail atılacak gerçek adres
                 "content": body[:1000]
             })
         except Exception as e:

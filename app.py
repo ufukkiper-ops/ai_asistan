@@ -284,9 +284,10 @@ def mail_page():
     if "user" not in session: 
         return redirect(url_for("login"))
         
-    username = session["user"]
     error = ""
     success_message = ""
+    ai_yaniti = ""
+    secilen_mail = {}
     mailler = []
 
     try:
@@ -295,57 +296,90 @@ def mail_page():
         error = f"Mailler çekilirken hata oluştu: {str(e)}"
 
     if request.method == "POST":
+        islem = request.form.get("islem")
         sender = request.form.get("sender")
         subject = request.form.get("subject")
         content = request.form.get("content")
         
-        client = get_client()
-        if client is None:
-            error = "Sunucuda OPENAI_API_KEY ayarlı değil."
-        else:
+        if islem == "olustur":
+            # 1. AŞAMA: Sadece Yapay Zekadan Yanıt Taslağı Alıyoruz
+            client = get_client()
+            if client is None:
+                error = "Sunucuda OPENAI_API_KEY ayarlı değil."
+            else:
+                try:
+                    prompt = f"Gelen Mail Kimden: {sender}\nKonu: {subject}\nİçerik: {content}\n\nBu maili profesyonel, kibar ve çözüm odaklı şekilde Türkçe olarak yanıtla."
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    ai_yaniti = response.choices[0].message.content
+                    secilen_mail = {"sender": sender, "subject": subject, "content": content}
+                except Exception as e:
+                    error = f"Yanıt oluşturulurken hata: {str(e)}"
+                    
+        elif islem == "gonder":
+            # 2. AŞAMA: Oluşturulan Yanıtı Gerçekten Gönderiyoruz
+            final_reply = request.form.get("final_reply")
             try:
-                prompt = f"Gelen Mail Kimden: {sender}\nKonu: {subject}\nİçerik: {content}\n\nBu maili profesyonel, kibar ve çözüm odaklı şekilde Türkçe olarak yanıtla."
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                ai_yaniti = response.choices[0].message.content
-
-                send_reply_mail(to_email=sender, subject=f"Re: {subject}", body=ai_yaniti)
-                success_message = f"{sender} adresine yapay zeka yanıtı başarıyla gönderildi!"
+                send_reply_mail(to_email=sender, subject=f"Re: {subject}", body=final_reply)
+                success_message = f"{sender} adresine yanıt başarıyla postalandı!"
             except Exception as e:
-                error = f"Yanıt gönderilirken hata oluştu: {str(e)}"
+                error = f"E-posta gönderilirken hata oluştu: {str(e)}"
 
     mail_items_html = ""
     if mailler:
         for m in mailler:
             mail_items_html += f"""
             <div class="user-box" style="margin-bottom: 15px; background: #ffffff !important; border-left: 4px solid #10b981;">
-                <p><b>Kimden:</b> {m.get('sender', 'Bilinmiyor')}</p>
+                <p><b>Kimden:</b> {m.get('sender_display', 'Bilinmiyor')}</p>
                 <p><b>Konu:</b> {m.get('subject', 'Konu Yok')}</p>
-                <p style="background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px;">{m.get('content', '')}</p>
+                <p style="background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; max-height: 150px; overflow-y: auto;">{m.get('content', '')}</p>
+                
                 <form method="post" style="margin-top: 10px;">
+                    <input type="hidden" name="islem" value="olustur">
                     <input type="hidden" name="sender" value="{m.get('sender', '')}">
                     <input type="hidden" name="subject" value="{m.get('subject', '')}">
                     <input type="hidden" name="content" value="{m.get('content', '')}">
-                    <button class="btn btn-green" type="submit" style="padding: 6px 12px; font-size: 13px;">🤖 KipGPT ile Yanıtla ve Gönder</button>
+                    <button class="btn btn-blue" type="submit" style="padding: 6px 12px; font-size: 13px;">🤖 KipGPT ile Yanıt Oluştur</button>
                 </form>
             </div>
             """
     else:
         mail_items_html = "<p style='color:#64748b;'>Kutuda mail bulunamadı.</p>"
 
+    # Eğer yapay zeka bir yanıt ürettiyse, bunu düzenlenebilir bir kutuda en üstte gösteriyoruz
+    ai_preview_html = ""
+    if ai_yaniti:
+        ai_preview_html = f"""
+        <div class="user-box" style="margin-bottom: 25px; background: #f0fdf4 !important; border: 1px solid #bbf7d0;">
+            <h4 style="margin-top:0; color:#166534;">🤖 KipGPT Taslak Yanıtı</h4>
+            <p style="font-size:12px; color:#64748b; margin-bottom:5px;">Alıcı: {secilen_mail.get('sender')}</p>
+            <form method="post">
+                <input type="hidden" name="islem" value="gonder">
+                <input type="hidden" name="sender" value="{secilen_mail.get('sender')}">
+                <input type="hidden" name="subject" value="{secilen_mail.get('subject')}">
+                <textarea name="final_reply" style="width:100%; height:150px; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:inherit; font-size:14px; margin-bottom:10px;">{ai_yaniti}</textarea>
+                <button class="btn btn-green" type="submit" style="width:100%; padding:10px; font-weight:600;">🚀 Yanıtı E-Posta Olarak Gönder</button>
+            </form>
+        </div>
+        """
+
     content_html = f"""
-    <div class="layout" style="justify-content: center; overflow-y: auto; padding: 40px 20px;">
-        <div class="card" style="max-width: 700px; margin: 0 auto; width: 100%;">
+    <div class="layout" style="justify-content: center; overflow-y: auto; padding: 20px 15px;">
+        <div class="card" style="max-width: 700px; margin: 0 auto; width: 100%; padding: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin:0;">E-Posta Asistanı</h2>
+                <h2 style="margin:0; font-size:20px;">E-Posta Asistanı</h2>
                 <a href="/"><button class="btn btn-blue" style="padding: 6px 12px; font-size: 13px;">Sohbete Dön</button></a>
             </div>
+            
             {"<div class='error'>" + error + "</div>" if error else ""}
-            {"<div class='error' style='background:#d1fae5 !important; color:#065f46 !important;'> " + success_message + "</div>" if success_message else ""}
-            <div style="margin-top: 20px;">
-                <h3 style="font-size: 16px; color: #334155;">Son Gelen E-Postalar</h3>
+            {"<div class='error' style='background:#d1fae5 !important; color:#065f46 !important; border:1px solid #a7f3d0;'> " + success_message + "</div>" if success_message else ""}
+            
+            {ai_preview_html}
+
+            <div style="margin-top: 10px;">
+                <h3 style="font-size: 15px; color: #334155; margin-bottom:8px;">Son Gelen E-Postalar</h3>
                 <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 15px;">
                 {mail_items_html}
             </div>
