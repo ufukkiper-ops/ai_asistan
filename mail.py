@@ -8,11 +8,11 @@ import os
 from openai import OpenAI
 
 # 🔐 EMAIL VE SUNUCU AYARLARI
-EMAIL = "ufukkiper@gmail.com"
-PASSWORD = "Çınar-55"  # 16 haneli Google Uygulama Şifreniz
+EMAIL = "ufukkiper@pamecarbon.com"
+PASSWORD = "Ufuk-55-"  # 16 haneli Google Uygulama Şifreniz
 
-IMAP_SERVER = "imap.gmail.com"
-SMTP_SERVER = "smtp.gmail.com"
+IMAP_SERVER = "mail.pamecarbon.com"
+SMTP_SERVER = "mail.pamecarbon.com"
 SMTP_PORT = 587
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
