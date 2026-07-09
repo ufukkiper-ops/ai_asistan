@@ -179,102 +179,47 @@ def render_page(content):
 def register():
     error = ""
     if request.method == "POST":
-        # HATA BURADA: Formdan gelen 'islem' değerini almalısın
-        islem = request.form.get("islem") 
-        
-        # Eğer bu değer yoksa hata almamak için bir kontrol ekleyelim:
-        if not islem:
-            islem = "kayit" # Varsayılan bir değer ata
-            
-        # ... geri kalan kodların ...
-            if client is None:
-                error = "Sunucuda OPENAI_API_KEY ayarlı değil."
-            else:
-                try:
-                    talimat_ekleme = f"\nKullanıcının Özel İsteği/Notu: {user_instruction}" if user_instruction else ""
-                    prompt = f"""Gelen Mail Kimden: {sender}
-Konu: {subject}
-İçerik: {content}
-{talimat_ekleme}
-
-Yukarıdaki maili, kullanıcının özel isteğini dikkate alarak profesyonel, kibar ve çözüm odaklı şekilde Türkçe olarak yanıtla.
-
-⚠️ KRİTİK KURAL: Yanıtında ASLA "İşte güncellenmiş mail", "Tabii ki yazıyorum", "Merhaba" (eğer maile ait değilse) gibi hiçbir giriş, açıklama veya kapanış cümlesi kurma. Sadece ve sadece KARŞI TARAFA GÖNDERİLECEK mail metnini yaz."""
-
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    
-                    # 🎯 TÜRKÇE KARAKTER GARANTİSİ: Gelen yanıtı alıp utf-8 ile sağlama alıyoruz
-                    raw_content = response['choices'][0]['message']['content'].strip()
-                    ai_yaniti = raw_content.encode('utf-8').decode('utf-8')
-                    ai_yaniti = response.choices[0].message.content.strip()
-                    ai_yaniti = ai_yaniti.replace('ı', '&#305;').replace('İ', '&#304;').replace('ğ', '&#287;').replace('Ğ', '&#286;').replace('ü', '&#252;').replace('Ü', '&#220;').replace('ş', '&#351;').replace('Ş', '&#350;').replace('ö', '&#246;').replace('Ö', '&#214;').replace('ç', '&#231;').replace('Ç', '&#199;')
-                    
-                    secilen_mail = {"sender": sender, "subject": subject, "content": content}
-                except Exception as e:
-                    error = f"Yanıt oluşturulurken hata: {str(e)}"
-                    
-        elif islem == "revize_et":
-            client = get_client()
-            if client is None:
-                error = "Sunucuda OPENAI_API_KEY ayarlı değil."
-            else:
-                try:
-                    prompt = f"""Gelen Mail Kimden: {sender}
-Konu: {subject}
-İçerik: {content}
-
-Daha Önce Hazırlanan Taslak:
-{current_draft}
-
-Kullanıcının Taslağı Yeniden Düzenleme İsteği:
-{revize_notu}
-
-Yukarıdaki eski taslağı, kullanıcının yeni düzenleme isteği doğrultusunda güncelleyerek yeniden Türkçe olarak yaz.
-
-⚠️ KRİTİK KURAL: Yanıtında ASLA "İsteğiniz üzerine düzelttim", "Şöyle değiştirdim" gibi hiçbir açıklama cümlesi yer almasın. Sadece ve sadece KARŞI TARAFA GÖNDERİLECEK olan nihai mail metnini döndür."""
-
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    
-                    # 🎯 TÜRKÇE KARAKTER GARANTİSİ: Gelen yanıtı alıp utf-8 ile sağlama alıyoruz
-                    raw_content = response.choices[0].message.content.strip()
-                    ai_yaniti = raw_content.encode('utf-8').decode('utf-8')
-                    
-                    secilen_mail = {"sender": sender, "subject": subject, "content": content}
-                except Exception as e:
-                    error = f"Taslak yeniden düzenlenirken hata: {str(e)}"
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
-        if username == "" or password == "":
+        
+        if not username or not password:
             error = "Kullanıcı adı ve şifre boş olamaz."
         else:
             users = load_users()
-            for user in users:
-                if user["username"] == username:
-                    error = "Bu kullanıcı adı zaten kullanılıyor."
-                    break
-            if error == "":
+            if any(u["username"] == username for u in users):
+                error = "Bu kullanıcı adı zaten kullanılıyor."
+            else:
                 users.append({"username": username, "password": password})
                 save_users(users)
                 return redirect(url_for("login"))
-    content = f"""
-    <div class="card">
-        <h2>Kayıt Ol</h2>
-        {"<div class='error'>" + error + "</div>" if error else ""}
-        <form method="post">
-            <input name="username" placeholder="Kullanıcı adı">
-            <input name="password" type="password" placeholder="Şifre">
-            <button class="btn btn-blue" type="submit" style="width:100%;">Kayıt Ol</button>
-        </form>
-        <p style="font-size:14px; text-align:center;">Zaten hesabın var mı? <a href="/login" style="color:#0284c7;">Giriş Yap</a></p>
-    </div>
-    """
-    return render_page(content)
+                
+    return render_page(f"<div class='card'><h2>Kayıt Ol</h2>{f'<div class=\"error\">{error}</div>' if error else ''}<form method='post'><input name='username' placeholder='Kullanıcı adı'><input name='password' type='password' placeholder='Şifre'><button class='btn-blue' type='submit'>Kayıt Ol</button></form></div>")
+
+# --- 2. AI İŞLEMLERİ İÇİN YENİ ROTA ---
+@app.route("/ai_islem", methods=["POST"])
+def ai_islem():
+    # Burada 'islem' değişkenini formdan güvenle alıyoruz
+    islem = request.form.get("islem")
+    # Diğer gerekli verileri al
+    sender = request.form.get("sender", "")
+    subject = request.form.get("subject", "")
+    content = request.form.get("content", "")
+    user_instruction = request.form.get("user_instruction", "")
+    
+    client = get_client()
+    if not client: return "API Key hatası", 500
+    
+    # AI mantığını buraya taşıdık
+    prompt = f"Gelen Mail: {sender} | Konu: {subject} | İçerik: {content}"
+    if islem == "olustur":
+        prompt += f"\nTalimat: {user_instruction}\nSadece maili yaz."
+    
+    response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
+    return response.choices[0].message.content
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    return render_page("<h2>Giriş Yap</h2>...")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
