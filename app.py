@@ -300,15 +300,24 @@ def mail_page():
         sender = request.form.get("sender")
         subject = request.form.get("subject")
         content = request.form.get("content")
+        user_instruction = request.form.get("user_instruction", "").strip() # Kullanıcının özel talimatı
         
         if islem == "olustur":
-            # 1. AŞAMA: Sadece Yapay Zekadan Yanıt Taslağı Alıyoruz
             client = get_client()
             if client is None:
                 error = "Sunucuda OPENAI_API_KEY ayarlı değil."
             else:
                 try:
-                    prompt = f"Gelen Mail Kimden: {sender}\nKonu: {subject}\nİçerik: {content}\n\nBu maili profesyonel, kibar ve çözüm odaklı şekilde Türkçe olarak yanıtla."
+                    # Yapay zekaya hem gelen maili hem de senin özel talimatını gönderiyoruz:
+                    talimat_ekleme = f"\nKullanıcının Özel İsteği/Notu: {user_instruction}" if user_instruction else ""
+                    
+                    prompt = f"""Gelen Mail Kimden: {sender}
+Konu: {subject}
+İçerik: {content}
+{talimat_ekleme}
+
+Yukarıdaki maili, varsa kullanıcının özel isteğini/notunu dikkate alarak profesyonel, kibar ve çözüm odaklı şekilde Türkçe olarak yanıtla."""
+
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[{"role": "user", "content": prompt}]
@@ -319,7 +328,6 @@ def mail_page():
                     error = f"Yanıt oluşturulurken hata: {str(e)}"
                     
         elif islem == "gonder":
-            # 2. AŞAMA: Oluşturulan Yanıtı Gerçekten Gönderiyoruz
             final_reply = request.form.get("final_reply")
             try:
                 send_reply_mail(to_email=sender, subject=f"Re: {subject}", body=final_reply)
@@ -331,35 +339,38 @@ def mail_page():
     if mailler:
         for m in mailler:
             mail_items_html += f"""
-            <div class="user-box" style="margin-bottom: 15px; background: #ffffff !important; border-left: 4px solid #10b981;">
-                <p><b>Kimden:</b> {m.get('sender_display', 'Bilinmiyor')}</p>
-                <p><b>Konu:</b> {m.get('subject', 'Konu Yok')}</p>
-                <p style="background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; max-height: 150px; overflow-y: auto;">{m.get('content', '')}</p>
+            <div class="user-box" style="margin-bottom: 20px; background: #ffffff !important; border-left: 4px solid #10b981; padding: 15px;">
+                <p style="margin: 4px 0;"><b>Kimden:</b> {m.get('sender_display', 'Bilinmiyor')}</p>
+                <p style="margin: 4px 0;"><b>Konu:</b> {m.get('subject', 'Konu Yok')}</p>
+                <p style="background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; max-height: 120px; overflow-y: auto; margin-top: 8px;">{m.get('content', '')}</p>
                 
-                <form method="post" style="margin-top: 10px;">
+                <form method="post" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                     <input type="hidden" name="islem" value="olustur">
                     <input type="hidden" name="sender" value="{m.get('sender', '')}">
                     <input type="hidden" name="subject" value="{m.get('subject', '')}">
                     <input type="hidden" name="content" value="{m.get('content', '')}">
-                    <button class="btn btn-blue" type="submit" style="padding: 6px 12px; font-size: 13px;">🤖 KipGPT ile Yanıt Oluştur</button>
+                    
+                    <input type="text" name="user_instruction" placeholder="Yapay zekaya not bırakın (Örn: Teklifi reddet, haftaya ertele...)" 
+                           style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; box-sizing: border-box; background:#ffffff !important;">
+                    
+                    <button class="btn btn-blue" type="submit" style="padding: 8px 12px; font-size: 13px; align-self: flex-start;">🤖 KipGPT ile Yanıt Oluştur</button>
                 </form>
             </div>
             """
     else:
         mail_items_html = "<p style='color:#64748b;'>Kutuda mail bulunamadı.</p>"
 
-    # Eğer yapay zeka bir yanıt ürettiyse, bunu düzenlenebilir bir kutuda en üstte gösteriyoruz
     ai_preview_html = ""
     if ai_yaniti:
         ai_preview_html = f"""
-        <div class="user-box" style="margin-bottom: 25px; background: #f0fdf4 !important; border: 1px solid #bbf7d0;">
-            <h4 style="margin-top:0; color:#166534;">🤖 KipGPT Taslak Yanıtı</h4>
-            <p style="font-size:12px; color:#64748b; margin-bottom:5px;">Alıcı: {secilen_mail.get('sender')}</p>
+        <div class="user-box" style="margin-bottom: 25px; background: #f0fdf4 !important; border: 1px solid #bbf7d0; padding: 15px;">
+            <h4 style="margin-top:0; color:#166534; margin-bottom: 8px;">🤖 KipGPT Taslak Yanıtı</h4>
+            <p style="font-size:12px; color:#64748b; margin-bottom:8px;">Alıcı: {secilen_mail.get('sender')}</p>
             <form method="post">
                 <input type="hidden" name="islem" value="gonder">
                 <input type="hidden" name="sender" value="{secilen_mail.get('sender')}">
                 <input type="hidden" name="subject" value="{secilen_mail.get('subject')}">
-                <textarea name="final_reply" style="width:100%; height:150px; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:inherit; font-size:14px; margin-bottom:10px;">{ai_yaniti}</textarea>
+                <textarea name="final_reply" style="width:100%; height:150px; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:inherit; font-size:14px; margin-bottom:10px; box-sizing: border-box;">{ai_yaniti}</textarea>
                 <button class="btn btn-green" type="submit" style="width:100%; padding:10px; font-weight:600;">🚀 Yanıtı E-Posta Olarak Gönder</button>
             </form>
         </div>
@@ -367,7 +378,7 @@ def mail_page():
 
     content_html = f"""
     <div class="layout" style="justify-content: center; overflow-y: auto; padding: 20px 15px;">
-        <div class="card" style="max-width: 700px; margin: 0 auto; width: 100%; padding: 20px;">
+        <div class="card" style="max-width: 700px; margin: 0 auto; width: 100%; padding: 20px; box-sizing: border-box;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="margin:0; font-size:20px;">E-Posta Asistanı</h2>
                 <a href="/"><button class="btn btn-blue" style="padding: 6px 12px; font-size: 13px;">Sohbete Dön</button></a>
