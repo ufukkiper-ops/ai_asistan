@@ -13,7 +13,7 @@ PASSWORD = "Ufuk-55-"  # 16 haneli Google Uygulama Şifreniz
 
 IMAP_SERVER = "mail.pamecarbon.com"
 SMTP_SERVER = "mail.pamecarbon.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
