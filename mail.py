@@ -8,8 +8,8 @@ import os
 from openai import OpenAI
 
 # 🔐 EMAIL VE SUNUCU AYARLARI
-EMAIL = "seninmail@gmail.com"
-PASSWORD = "app_password"  # 16 haneli Google Uygulama Şifreniz
+EMAIL = "ufukkiper@gmail.com"
+PASSWORD = "Çınar-55"  # 16 haneli Google Uygulama Şifreniz
 
 IMAP_SERVER = "imap.gmail.com"
 SMTP_SERVER = "smtp.gmail.com"
