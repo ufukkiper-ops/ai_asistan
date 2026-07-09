@@ -179,8 +179,14 @@ def render_page(content):
 def register():
     error = ""
     if request.method == "POST":
-        if islem == "olustur":
-            client = get_client()
+        # HATA BURADA: Formdan gelen 'islem' değerini almalısın
+        islem = request.form.get("islem") 
+        
+        # Eğer bu değer yoksa hata almamak için bir kontrol ekleyelim:
+        if not islem:
+            islem = "kayit" # Varsayılan bir değer ata
+            
+        # ... geri kalan kodların ...
             if client is None:
                 error = "Sunucuda OPENAI_API_KEY ayarlı değil."
             else:
