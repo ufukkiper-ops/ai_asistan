@@ -203,6 +203,8 @@ Yukarıdaki maili, kullanıcının özel isteğini dikkate alarak profesyonel, k
                     # 🎯 TÜRKÇE KARAKTER GARANTİSİ: Gelen yanıtı alıp utf-8 ile sağlama alıyoruz
                     raw_content = response['choices'][0]['message']['content'].strip()
                     ai_yaniti = raw_content.encode('utf-8').decode('utf-8')
+                    ai_yaniti = response.choices[0].message.content.strip()
+                    ai_yaniti = ai_yaniti.replace('ı', '&#305;').replace('İ', '&#304;').replace('ğ', '&#287;').replace('Ğ', '&#286;').replace('ü', '&#252;').replace('Ü', '&#220;').replace('ş', '&#351;').replace('Ş', '&#350;').replace('ö', '&#246;').replace('Ö', '&#214;').replace('ç', '&#231;').replace('Ç', '&#199;')
                     
                     secilen_mail = {"sender": sender, "subject": subject, "content": content}
                 except Exception as e:
@@ -282,7 +284,7 @@ def login():
                 found = True
                 break
         if found:
-            return redirect(url_for("index"))
+            return redirect(url_for("home"))
         else:
             error = "Kullanıcı adı veya şifre hatalı."
     content = f"""
