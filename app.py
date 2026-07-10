@@ -296,6 +296,49 @@ body{
     height:52px;
     padding:0 22px;
 }
+.sidebar h2{
+    font-size:30px;
+    font-weight:700;
+    margin-bottom:25px;
+    color:#60a5fa;
+    letter-spacing:.5px;
+}
+
+.topbar{
+    box-shadow:0 2px 10px rgba(0,0,0,.25);
+}
+
+.messages{
+    background:#111827;
+}
+
+.bottom{
+    background:#0b1120;
+}
+
+.input-container{
+    background:#111827;
+    padding:10px;
+    border-radius:18px;
+}
+
+.input-container input[type=text]{
+    background:transparent;
+    font-size:16px;
+}
+
+.input-container button{
+    min-width:110px;
+    font-weight:700;
+}
+
+.new-chat{
+    font-size:18px;
+}
+
+.chat-item{
+    font-size:16px;
+}
 </style>
 <script>
 async function sendTextMessage(event) {
@@ -306,11 +349,31 @@ async function sendTextMessage(event) {
 
     if (!message) return;
 
+    const messages = document.querySelector(".messages");
+
+    // Kullanıcının mesajını hemen ekrana yaz
+    messages.innerHTML += `
+        <div class="msg msg-user">
+            <b>Sen:</b><br>${message}
+        </div>
+    `;
+
+    // KipGPT düşünüyor...
+    const loading = document.createElement("div");
+    loading.className = "msg msg-bot";
+    loading.innerHTML = "<b>KipGPT:</b><br><i>Düşünüyor...</i>";
+    messages.appendChild(loading);
+
+    messages.scrollTop = messages.scrollHeight;
+
     const formData = new FormData();
     formData.append("action", "text");
     formData.append("soru", message);
 
+    input.value = "";
+
     try {
+
         const response = await fetch("/", {
             method: "POST",
             body: formData
@@ -319,17 +382,30 @@ async function sendTextMessage(event) {
         const data = await response.json();
 
         if (data.status === "success") {
-            location.reload();
+
+            loading.innerHTML = `
+                <b>KipGPT:</b><br>${data.answer}
+            `;
+
         } else {
-            alert(data.error || "Bir hata oluştu.");
+
+            loading.innerHTML = `
+                <b>Hata:</b><br>${data.error}
+            `;
+
         }
 
     } catch (e) {
-        alert("Sunucuya bağlanılamadı.");
+
+        loading.innerHTML = `
+            <b>Bağlantı Hatası</b>
+        `;
+
         console.error(e);
+
     }
 
-    input.value = "";
+    messages.scrollTop = messages.scrollHeight;
 }
 </script>
 </head><body>{{ content|safe }}</body></html>
@@ -529,7 +605,7 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
                     <input type="hidden" name="content" value="{m.get('content', '')}">
                     
                     <input type="text" name="user_instruction" placeholder="Yapay zekaya not bırakın (Örn: Teklifi reddet, haftaya ertele...)" 
-                    <input type="text" name="user_instruction" placeholder="Yapay zekaya not bırakın (Örn: Teklifi reddet...)" 
+
                            style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; box-sizing: border-box; background:#ffffff !important;">
                     
                     <button class="btn btn-blue" type="submit" style="padding: 8px 12px; font-size: 13px; align-self: flex-start;">🤖 KipGPT ile Yanıt Oluştur</button>
