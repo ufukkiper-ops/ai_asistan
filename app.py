@@ -388,7 +388,7 @@ if (!message && fileInput.files.length === 0) {
     messages.scrollTop = messages.scrollHeight;
 
     const formData = new FormData();
-    const fileInput = document.getElementById("file-input");
+    
 
 if (fileInput.files.length > 0) {
     formData.set("action", "image");
