@@ -400,9 +400,7 @@ async function sendTextMessage(event) {
 
         if (data.status === "success") {
 
-            loading.innerHTML =
-               `<b>KipGPT:</b><br>${data.answer}`;
-            `;
+            loading.innerHTML = `<b>KipGPT:</b><br>${data.answer}`;
 
         } else {
 
