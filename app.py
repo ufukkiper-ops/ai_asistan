@@ -833,15 +833,15 @@ def index():
                     data[username]["chats"][active_chat] = gecmis
                     save_data(data)
                 except Exception as e:
-                 return jsonify({
-        "status": "error",
-        "error": str(e)
-    })
+                    return jsonify({
+                        "status": "error",
+                        "error": str(e)
+                    })
 
-    return jsonify({
-    "status": "success",
-    "answer": cevap
-})
+                return jsonify({
+                    "status": "success",
+                    "answer": cevap
+                })
 
     chat_list_html = "".join([
         f'<a class="chat-item {"active" if cid == active_chat else ""}" href="/switch/{cid}">{cid}</a>'
