@@ -4,7 +4,15 @@ import json
 import base64
 import re
 from openai import OpenAI
-from mail import get_last_mails, send_reply_mail 
+from mail import (
+    get_inbox,
+    get_sent,
+    get_spam,
+    get_trash,
+    get_drafts,
+    get_archive,
+    send_reply_mail
+)
 from pypdf import PdfReader
 def save_users(users):
     """Kullanıcı verilerini JSON dosyasına kaydeder."""
@@ -213,23 +221,66 @@ def clear_chat():
 
 @app.route("/mail", methods=["GET", "POST"])
 def mail_page():
-    if "user" not in session: return redirect(url_for("login"))
-    error = "" 
-    success_message = ""
-    ai_yaniti = ""
-    secilen_mail = {}
-    
+
+    if "user" not in session:
+        return redirect(url_for("login"))
 
     error = ""
     success_message = ""
     ai_yaniti = ""
     secilen_mail = {}
-    mailler = []
+
+    folder = request.args.get("folder", "inbox")
+    folder_menu = """
+    <div style="
+    display:flex;
+    gap:10px;
+    margin-bottom:20px;
+    flex-wrap:wrap;
+    ">
+
+    <a class="btn btn-blue" href="/mail?folder=inbox">📥 Gelen</a>
+
+    <a class="btn btn-blue" href="/mail?folder=sent">📤 Gönderilen</a>
+
+    <a class="btn btn-blue" href="/mail?folder=spam">🚫 Spam</a>
+
+    <a class="btn btn-blue" href="/mail?folder=drafts">⭐ Taslaklar</a>
+
+    <a class="btn btn-blue" href="/mail?folder=trash">🗑 Çöp</a>
+
+    <a class="btn btn-blue" href="/mail?folder=archive">📦 Arşiv</a>
+
+    </div>
+    """
 
     try:
-        mailler = get_last_mails(count=5) 
+
+        if folder == "inbox":
+            mailler = get_inbox(20)
+
+        elif folder == "sent":
+            mailler = get_sent(20)
+
+        elif folder == "spam":
+            mailler = get_spam(20)
+
+        elif folder == "trash":
+            mailler = get_trash(20)
+
+        elif folder == "drafts":
+            mailler = get_drafts(20)
+
+        elif folder == "archive":
+            mailler = get_archive(20)
+
+        else:
+            mailler = get_inbox(20)
+
     except Exception as e:
-        error = f"Mailler çekilirken hata oluştu: {str(e)}"
+
+        error = str(e)
+        mailler = []
 
     if request.method == "POST":
         islem = request.form.get("islem")
@@ -301,7 +352,28 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
                 success_message = f"{sender} adresine yanıt başarıyla postalandı!"
             except Exception as e:
                 error = f"E-posta gönderilirken hata oluştu: {str(e)}"
+                folder_menu = """
+                <div style="
+                display:flex;
+                gap:10px;
+                margin-bottom:20px;
+                flex-wrap:wrap;
+                ">
 
+                <a class="btn btn-blue" href="/mail?folder=inbox">📥 Gelen</a>
+
+                <a class="btn btn-blue" href="/mail?folder=sent">📤 Gönderilen</a>
+
+                <a class="btn btn-blue" href="/mail?folder=spam">🚫 Spam</a>
+
+                <a class="btn btn-blue" href="/mail?folder=drafts">⭐ Taslaklar</a>
+
+                <a class="btn btn-blue" href="/mail?folder=trash">🗑 Çöp</a>
+
+                <a class="btn btn-blue" href="/mail?folder=archive">📦 Arşiv</a>
+
+                </div>
+                """
     mail_items_html = ""
     if mailler:
         for m in mailler:
@@ -377,7 +449,9 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
             
             {ai_preview_html}
 
-            <div style="margin-top: 10px;">
+            {folder_menu}
+
+                <div style="margin-top:10px;">
                 <h3 style="font-size: 15px; color: #334155; margin-bottom:8px;">Son Gelen E-Postalar</h3>
                 <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 15px;">
                 {mail_items_html}
@@ -386,7 +460,10 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
     </div>
     """
     return render_page(content_html)
+
+
 def image_file_to_data_url(file_storage):
+
     """Gelen resmi base64 formatına çevirir."""
     mime_type = file_storage.mimetype or "image/jpeg"
     raw = file_storage.read()
@@ -484,14 +561,7 @@ def index():
                             print(chat_titles)
                             chat_list_html = ""
 
-                            for cid in chats.keys():
-                                title = chat_titles.get(cid, cid)
-                                active = "active" if cid == active_chat else ""
-                                chat_list_html += f"""
-                    <a class="chat-item {active}" href="/switch/{cid}">
-                    {title}
-                    </a>
-                        """
+                
                         except Exception as e:
                             print("BAŞLIK HATASI:", e)
                             chat_titles[active_chat] = soru[:30]
@@ -505,9 +575,13 @@ def index():
                     "content": cevap
                 })
 
+                # append assistant response
+                # (already appended above)
+
                 data[username]["chats"][active_chat] = gecmis
-                print(data)
-                
+                data[username]["chat_titles"] = chat_titles
+
+                save_data(data)
 
                 return jsonify({
                     "status": "success",
@@ -638,7 +712,7 @@ def index():
             messages_html += f'<div class="{css}"><b>Sen:</b><br>{content}</div>'
         else:
             messages_html += f'<div class="{css}"><b class="bot-text">KipGPT:</b><br><span class="bot-text">{content}</span>{extra_image}</div>'
-
+    {folder_menu}
     content = f"""
     <div class="layout">
         <div class="sidebar">
