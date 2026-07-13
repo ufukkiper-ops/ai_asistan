@@ -252,7 +252,7 @@ def mail_page():
     <a class="btn btn-blue" href="/mail?folder=archive">📦 Arşiv</a>
 
     </div>
-    return render_page(content_html)
+    
     """
 
     try:
@@ -414,6 +414,32 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
             </div>
         </div>
         """
+
+    content_html = f"""
+                    <div class="layout" style="justify-content:center;overflow-y:auto;padding:20px;">
+
+<div class="card" style="max-width:900px;width:100%;">
+
+<h2>E-Posta Asistanı</h2>
+
+<a href="/">
+<button class="btn btn-blue">Sohbete Dön</button>
+</a>
+
+{"<div class='error'>"+error+"</div>" if error else ""}
+
+{folder_menu}
+
+{ai_preview_html}
+
+{mail_items_html}
+
+</div>
+
+</div>
+"""
+
+    return render_page(content_html)
 
 
 
