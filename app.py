@@ -502,7 +502,7 @@ def index():
                 try:
 
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model="gpt-5.5",
                         messages=[
                             {
                                 "role": m["role"],
@@ -518,7 +518,7 @@ def index():
                         try:
 
                             title_response = client.chat.completions.create(
-                                model="gpt-4o-mini",
+                                model="gpt-5.5",
                                 messages=[
                                     {
                                         "role": "system",
@@ -588,7 +588,7 @@ def index():
                     pdf_text = pdf_to_text(uploaded_file)
 
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model="gpt-5.5",
                         messages=[
                             {
                                 "role": "user",
@@ -611,7 +611,7 @@ def index():
                     image_data_url = image_file_to_data_url(uploaded_file)
 
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model="gpt-5.5",
                         messages=[
                             {
                                 "role": "user",
