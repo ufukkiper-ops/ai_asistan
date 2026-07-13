@@ -625,6 +625,15 @@ def index():
     </div>
     """
     return render_page(content)
+@app.route("/test")
+def test():
+    import os
+    return {
+        "cwd": os.getcwd(),
+        "files": os.listdir("."),
+        "static_exists": os.path.exists("static"),
+        "static_files": os.listdir("static") if os.path.exists("static") else []
+    }
 
 if __name__ == "__main__":
     # Render'ın verdiği PORT'u kullan, yoksa 10000 kullan
