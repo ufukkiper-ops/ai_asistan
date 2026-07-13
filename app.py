@@ -482,12 +482,19 @@ def index():
                                 title_response.choices[0].message.content.strip()
                             )
                             print(chat_titles)
+                            chat_list_html = ""
+
+                            for cid in chats.keys():
+                                title = chat_titles.get(cid, cid)
+                                active = "active" if cid == active_chat else ""
+                                chat_list_html += f"""
+                    <a class="chat-item {active}" href="/switch/{cid}">
+                    {title}
+                    </a>
+                        """
                         except Exception as e:
-
-                          print("BAŞLIK HATASI:", e)
-
-                        chat_titles[active_chat] = soru[:30]
-                    
+                            print("BAŞLIK HATASI:", e)
+                            chat_titles[active_chat] = soru[:30]
 
                 except Exception as e:
 
@@ -500,7 +507,7 @@ def index():
 
                 data[username]["chats"][active_chat] = gecmis
                 print(data)
-                save_data(data)
+                
 
                 return jsonify({
                     "status": "success",
@@ -586,7 +593,7 @@ def index():
                     "role": "assistant",
                     "content": cevap
                 })
-
+                data[username]["chat_titles"] = chat_titles
                 data[username]["chats"][active_chat] = gecmis
                 save_data(data)
 
@@ -608,7 +615,7 @@ def index():
 
      title = chat_titles.get(cid, cid)
 
-     active = "active" if cid == active_chat else ""
+    active = "active" if cid == active_chat else ""
 
     chat_list_html += f"""
     <a class="chat-item {active}" href="/switch/{cid}">
