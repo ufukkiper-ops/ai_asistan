@@ -348,6 +348,10 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
                 error = f"E-posta gönderilirken hata oluştu: {str(e)}"
                 
     mail_items_html = ""
+    
+    print("MAIL SAYISI =", len(mailler))
+    print(mailler[:1])
+    
     if mailler:
         for m in mailler:
             mail_items_html += f"""
