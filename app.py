@@ -182,6 +182,7 @@ def new_chat():
     if username not in data or not isinstance(data[username], dict):
         data[username] = {"active_chat": "chat1", "chats": {"chat1": []}}
     chats = data[username].setdefault("chats", {"chat1": []})
+    chat_titles = data[username].setdefault("chat_titles", {})
     new_id = f"chat{len(chats) + 1}"
     chats[new_id] = []
     data[username]["active_chat"] = new_id
@@ -414,8 +415,14 @@ def index():
         data[username] = {"active_chat": "chat1", "chats": {"chat1": []}}
 
     active_chat = data[username].get("active_chat", "chat1")
+
     chats = data[username].setdefault("chats", {"chat1": []})
+
+    chat_titles = data[username].setdefault("chat_titles", {})
+
     gecmis = chats.setdefault(active_chat, [])
+    
+    
 
     if request.method == "POST":
         action = request.form.get("action", "text")
@@ -453,6 +460,32 @@ def index():
                     )
 
                     cevap = response.choices[0].message.content
+                    if active_chat not in chat_titles:
+
+                        try:
+
+                            title_response = client.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": "En fazla 4 kelimelik bir sohbet başlığı oluştur. Emoji kullanabilirsin. Sadece başlığı yaz."
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": soru
+                                    }
+                                ]
+                            )
+
+                            chat_titles[active_chat] = (
+                                title_response.choices[0].message.content.strip()
+                            )
+
+                        except Exception:
+
+                            chat_titles[active_chat] = soru[:30]
+                    
 
                 except Exception as e:
 
@@ -566,10 +599,19 @@ def index():
                     "error": str(e)
                 })
 
-    chat_list_html = "".join([
-        f'<a class="chat-item {"active" if cid == active_chat else ""}" href="/switch/{cid}">{cid}</a>'
-        for cid in chats.keys()
-    ])
+    chat_list_html = ""
+
+    for cid in chats.keys():
+
+     title = chat_titles.get(cid, cid)
+
+     active = "active" if cid == active_chat else ""
+
+    chat_list_html += f"""
+    <a class="chat-item {active}" href="/switch/{cid}">
+        {title}
+    </a>
+    """
 
     messages_html = ""
     for mesaj in gecmis:
