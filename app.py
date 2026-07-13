@@ -67,35 +67,7 @@ BASE_HTML = """
 """
 
 def render_page(content):
-    return f"""
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-<meta charset="UTF-8">
-<title>TEST</title>
-
-<style>
-body{{
-    background:#111827;
-    color:white;
-    font-family:Arial;
-}}
-h1{{
-    color:red;
-}}
-</style>
-
-</head>
-
-<body>
-
-<h1>CSS TEST ÇALIŞIYOR</h1>
-
-{content}
-
-</body>
-</html>
-"""
+    return render_template_string(BASE_HTML, content=content)
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
