@@ -18,14 +18,8 @@ from storage import load_data, save_data
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 import os
 import json
-import base64
 import re
-from chat import (
-    get_client,
-    image_file_to_data_url,
-    pdf_to_text
-)
-from openai import OpenAI
+from chat import get_client
 from mail import (
     get_inbox,
     get_sent,
@@ -35,8 +29,6 @@ from mail import (
     get_archive,
     send_reply_mail
 )
-from pypdf import PdfReader
-
 ensure_users_file()
 
 app = Flask(__name__)
@@ -90,7 +82,10 @@ def register():
                     error = "Bu kullanıcı adı zaten kullanılıyor."
                     break
             if error == "":
-                users.append({"username": username, "password": password})
+                users.append({
+    "username": username,
+    "password": hash_password(password)
+})
                 save_users(users)
                 return redirect(url_for("login"))
     # render registration form
@@ -120,7 +115,10 @@ def login():
         users = load_users()
 
         for user in users:
-            if user["username"] == username and user["password"] == password:
+            if (
+    user["username"] == username
+    and check_password(password, user["password"])
+):
                 session["user"] = username
                 return redirect(url_for("index"))
 
@@ -351,12 +349,16 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
     
     if mailler:
         for m in mailler:
+            preview = (m.get("content", "")[:180] + "...") if len(m.get("content", "")) > 180 else m.get("content", "")
             mail_items_html += f"""
-            <div class="user-box" style="margin-bottom: 20px; background: #ffffff !important; border-left: 4px solid #10b981; padding: 15px;">
-                <p style="margin: 4px 0;"><b>Kimden:</b> {m.get('sender_display', 'Bilinmiyor')}</p>
-                <p style="margin: 4px 0;"><b>Konu:</b> {m.get('subject', 'Konu Yok')}</p>
-                <p style="background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; max-height: 120px; overflow-y: auto; margin-top: 8px;">{m.get('content', '')}</p>
-                
+            <div class="user-box" style="margin-bottom:20px;background:#fff;border-left:4px solid #10b981;padding:15px;">
+                <p><b>Kimden:</b> {m.get('sender_display','Bilinmiyor')}</p>
+                <h3 style="margin:4px 0;color:#0f172a;font-size:17px;">
+                {m.get('subject','Konu Yok')}
+                </h3>
+                <p style="color:#64748b;font-size:13px;">
+                    {preview}
+                </p>
                 <form method="post" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                     <input type="hidden" name="islem" value="olustur">
                     <input type="hidden" name="sender" value="{m.get('sender', '')}">
@@ -382,7 +384,7 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
             <meta charset="UTF-8">
             <h4 style="margin-top:0; color:#166534; margin-bottom: 8px;">🤖 KipGPT Taslak Yanıtı</h4>
             <p style="font-size:12px; color:#64748b; margin-bottom:8px;">Alıcı: {secilen_mail.get('sender')}</p>
-            <form method="post">
+            
             
             <form method="post" style="margin-bottom: 15px;">
                 <input type="hidden" name="islem" value="gonder">
