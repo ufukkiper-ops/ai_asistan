@@ -1,1 +1,20 @@
-{}
+{
+  "q": {
+    "active_chat": "chat1",
+    "chats": {
+      "chat1": [
+        {
+          "role": "user",
+          "content": "selam"
+        },
+        {
+          "role": "assistant",
+          "content": "Selam! Nasıl yardımcı olabilirim?"
+        }
+      ]
+    },
+    "chat_titles": {
+      "chat1": "Selamlaşma"
+    }
+  }
+}

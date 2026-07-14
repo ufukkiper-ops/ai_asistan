@@ -1,8 +1,30 @@
+from templates import render_chat_list
+from chat import (
+    get_client,
+    ask_gpt,
+    generate_chat_response,
+    generate_chat_title,
+    analyze_pdf,
+    analyze_image
+)
+from users import (
+    load_users,
+    save_users,
+    hash_password,
+    check_password,
+    ensure_users_file
+)
+from storage import load_data, save_data
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 import os
 import json
 import base64
 import re
+from chat import (
+    get_client,
+    image_file_to_data_url,
+    pdf_to_text
+)
 from openai import OpenAI
 from mail import (
     get_inbox,
@@ -14,41 +36,17 @@ from mail import (
     send_reply_mail
 )
 from pypdf import PdfReader
-def save_users(users):
-    """Kullanıcı verilerini JSON dosyasına kaydeder."""
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+
+ensure_users_file()
+
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "gizli123")
 
 # --- DOSYA İŞLEMLERİ ---
-USERS_FILE = "users.json"
+
 DATA_FILE = "data.json"
 
-def ensure_files():
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w", encoding="utf-8") as f: json.dump([], f, ensure_ascii=False, indent=2)
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w", encoding="utf-8") as f: json.dump({}, f, ensure_ascii=False, indent=2)
 
-ensure_files()
-
-def load_users():
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    except: return []
-
-def load_data():
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    except: return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=2)
-
-def get_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    return OpenAI(api_key=api_key) if api_key else None
 BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -251,6 +249,12 @@ def mail_page():
 """
 
     try:
+        import inspect
+
+        print("get_inbox objesi:", get_inbox)
+        print("modülü:", get_inbox.__module__)
+        print("imzası:", inspect.signature(get_inbox))
+
         if folder == "inbox":
             mailler = get_inbox(20)
 
@@ -302,11 +306,8 @@ Konu: {subject}
 
 Yukarıdaki maili, varsa kullanıcının özel isteğini/notunu dikkate alarak profesyonel, kibar ve çözüm odaklı şekilde Türkçe olarak yanıtla."""
 
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    ai_yaniti = response.choices[0].message.content
+                    ai_yaniti = ask_gpt(prompt)
+                    
                     secilen_mail = {"sender": sender, "subject": subject, "content": content}
                 except Exception as e:
                     error = f"Yanıt oluşturulurken hata: {str(e)}"
@@ -330,11 +331,7 @@ Kullanıcının Taslağı Yeniden Düzenleme İsteği:
 
 Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteği doğrultusunda güncelleyerek yeniden Türkçe olarak yaz."""
 
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    ai_yaniti = response.choices[0].message.content
+                    
                     secilen_mail = {"sender": sender, "subject": subject, "content": content}
                 except Exception as e:
                     error = f"Taslak yeniden düzenlenirken hata: {str(e)}"
@@ -438,29 +435,6 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
 
     return render_page(content_html)
 
-
-
-
-def image_file_to_data_url(file_storage):
-
-    """Gelen resmi base64 formatına çevirir."""
-    mime_type = file_storage.mimetype or "image/jpeg"
-    raw = file_storage.read()
-    encoded = base64.b64encode(raw).decode("utf-8")
-    return f"data:{mime_type};base64,{encoded}"
-
-def pdf_to_text(file_storage):
-    """PDF içindeki metni çıkarır."""
-    reader = PdfReader(file_storage)
-
-    text = ""
-
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text += page_text + "\n"
-
-    return text
 @app.route("/", methods=["GET", "POST"])
 def index():
     if "user" not in session: return redirect(url_for("login"))
@@ -504,39 +478,20 @@ def index():
 
                 try:
 
-                    response = client.chat.completions.create(
-                        model="gpt-5.5",
-                        messages=[
-                            {
-                                "role": m["role"],
-                                "content": m["content"]
-                            }
-                            for m in gecmis
-                        ]
-                    )
-
-                    cevap = response.choices[0].message.content
+                    cevap = generate_chat_response(
+    [
+        {
+            "role": m["role"],
+            "content": m["content"]
+        }
+        for m in gecmis
+    ]
+)
                     if active_chat not in chat_titles:
 
                         try:
 
-                            title_response = client.chat.completions.create(
-                                model="gpt-5.5",
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": "En fazla 4 kelimelik bir sohbet başlığı oluştur. Emoji kullanabilirsin. Sadece başlığı yaz."
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": soru
-                                    }
-                                ]
-                            )
-                            print(">>> Başlık oluşturuluyor...")
-                            chat_titles[active_chat] = (
-                                title_response.choices[0].message.content.strip()
-                            )
+                            chat_titles[active_chat] = generate_chat_title(soru)
                             print(chat_titles)
                             chat_list_html = ""
 
@@ -588,20 +543,10 @@ def index():
                 # ---------- PDF ----------
                 if uploaded_file.mimetype == "application/pdf":
 
-                    pdf_text = pdf_to_text(uploaded_file)
-
-                    response = client.chat.completions.create(
-                        model="gpt-5.5",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content":
-                                f"{prompt}\n\nPDF İçeriği:\n\n{pdf_text}"
-                            }
-                        ]
-                    )
-
-                    cevap = response.choices[0].message.content
+                    cevap = analyze_pdf(
+    uploaded_file,
+    prompt
+)
 
                     gecmis.append({
                         "role": "user",
@@ -611,30 +556,10 @@ def index():
                 # ---------- IMAGE ----------
                 else:
 
-                    image_data_url = image_file_to_data_url(uploaded_file)
-
-                    response = client.chat.completions.create(
-                        model="gpt-5.5",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": prompt
-                                    },
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": image_data_url
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
+                    cevap, image_data_url = analyze_image(
+                        uploaded_file,
+                        prompt
                     )
-
-                    cevap = response.choices[0].message.content
 
                     gecmis.append({
                         "role": "user",
@@ -642,13 +567,13 @@ def index():
                         "image": image_data_url
                     })
 
-                gecmis.append({
-                    "role": "assistant",
-                    "content": cevap
-                })
-                data[username]["chat_titles"] = chat_titles
-                data[username]["chats"][active_chat] = gecmis
-                save_data(data)
+                    gecmis.append({
+                        "role": "assistant",
+                        "content": cevap
+                    })
+                    data[username]["chat_titles"] = chat_titles
+                    data[username]["chats"][active_chat] = gecmis
+                    save_data(data)
 
                 return jsonify({
                     "status": "success",
@@ -662,19 +587,11 @@ def index():
                     "error": str(e)
                 })
 
-    chat_list_html = ""
-
-    for cid in chats.keys():
-
-     title = chat_titles.get(cid, cid)
-
-    active = "active" if cid == active_chat else ""
-
-    chat_list_html += f"""
-    <a class="chat-item {active}" href="/switch/{cid}">
-        {title}
-    </a>
-    """
+    chat_list_html = render_chat_list(
+    chats,
+    chat_titles,
+    active_chat
+)
 
     messages_html = ""
     for mesaj in gecmis:

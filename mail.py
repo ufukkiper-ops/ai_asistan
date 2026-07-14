@@ -1,326 +1,441 @@
 import imaplib
 import smtplib
 import email
-from email.header import decode_header
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
+import re
+
+from email.header import decode_header
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from openai import OpenAI
 
-# 🔐 EMAIL VE SUNUCU AYARLARI
+
+# ===========================
+# AYARLAR
+# ===========================
+
 EMAIL = "ufukkiper@pamecarbon.com"
-PASSWORD = "Ufuk-55-"  # 16 haneli Google Uygulama Şifreniz
+PASSWORD = "Ufuk-55-"
 
 IMAP_SERVER = "mail.pamecarbon.com"
+
 SMTP_SERVER = "mail.pamecarbon.com"
-SMTP_PORT = 465
+SMTP_PORT = 587
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
+# ===========================
+# IMAP BAĞLANTISI
+# ===========================
+
 def connect_mail(folder="INBOX"):
+
     mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+
     mail.login(EMAIL, PASSWORD)
-    mail.select(folder)
+
+    status, _ = mail.select(folder)
+
+    if status != "OK":
+        raise Exception(f"{folder} klasörü açılamadı.")
+
     return mail
+
+
+# ===========================
+# TÜM KLASÖRLERİ LİSTELE
+# ===========================
+
+def list_folders():
+
+    mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+
+    mail.login(EMAIL, PASSWORD)
+
+    status, folders = mail.list()
+
+    if status == "OK":
+
+        for folder in folders:
+            print(folder.decode())
+
+    mail.logout()
+
+
+# ===========================
+# HEADER ÇÖZÜMLEME
+# ===========================
+
+def decode_mail_header(value):
+
+    if value is None:
+        return ""
+
+    decoded = decode_header(value)
+
+    result = ""
+
+    for part, enc in decoded:
+
+        if isinstance(part, bytes):
+
+            result += part.decode(
+                enc if enc else "utf-8",
+                errors="ignore"
+            )
+
+        else:
+
+            result += str(part)
+
+    return result
+
+
+# ===========================
+# MAİL GÖVDESİ
+# ===========================
+
+def extract_body(msg):
+
+    body = ""
+
+    if msg.is_multipart():
+
+        for part in msg.walk():
+
+            if part.get_content_type() != "text/plain":
+                continue
+
+            payload = part.get_payload(decode=True)
+
+            if payload:
+
+                body = payload.decode(
+                    part.get_content_charset() or "utf-8",
+                    errors="ignore"
+                )
+
+                break
+
+    else:
+
+        payload = msg.get_payload(decode=True)
+
+        if payload:
+
+            body = payload.decode(
+                msg.get_content_charset() or "utf-8",
+                errors="ignore"
+            )
+
+    return body.strip()
+
+
+# ===========================
+# KLASÖRDEN MAİL OKU
+# ===========================
+
 def get_folder_mails(folder="INBOX", count=20):
 
     mail = connect_mail(folder)
 
-    _, messages = mail.search(None, "ALL")
-    mail_ids = messages[0].split()
+    status, messages = mail.search(None, "ALL")
+
+    if status != "OK":
+        return []
+
+    ids = messages[0].split()
 
     result = []
 
-    for i in reversed(mail_ids[-count:]):
+    for mail_id in reversed(ids[-count:]):
 
         try:
 
-            _, msg_data = mail.fetch(i, "(RFC822)")
+            _, msg_data = mail.fetch(mail_id, "(RFC822)")
+
             raw = msg_data[0][1]
+
             msg = email.message_from_bytes(raw)
 
-            subject, encoding = decode_header(msg["Subject"])[0]
+            subject = decode_mail_header(msg.get("Subject"))
 
-            if isinstance(subject, bytes):
-                subject = subject.decode(
-                    encoding if encoding else "utf-8",
-                    errors="ignore"
-                )
+            sender_display = decode_mail_header(msg.get("From"))
 
-            from_raw = msg.get("From")
+            match = re.search(
+                r'[\w\.-]+@[\w\.-]+',
+                sender_display
+            )
 
-            from_parts = decode_header(from_raw)
-
-            from_text = ""
-
-            for part, enc in from_parts:
-
-                if isinstance(part, bytes):
-                    from_text += part.decode(
-                        enc if enc else "utf-8",
-                        errors="ignore"
-                    )
-                else:
-                    from_text += str(part)
-
-            body = ""
-
-            if msg.is_multipart():
-
-                for part in msg.walk():
-
-                    if part.get_content_type() == "text/plain":
-
-                        payload = part.get_payload(decode=True)
-
-                        if payload:
-
-                            body = payload.decode(
-                                part.get_content_charset() or "utf-8",
-                                errors="ignore"
-                            )
-
-                        break
-
-            else:
-
-                payload = msg.get_payload(decode=True)
-
-                if payload:
-
-                    body = payload.decode(
-                        msg.get_content_charset() or "utf-8",
-                        errors="ignore"
-                    )
+            sender = match.group(0) if match else sender_display
 
             result.append({
 
-                "id": i.decode(),
+                "id": mail_id.decode(),
+
                 "subject": subject,
-                "sender": from_text,
-                "content": body[:1000]
+
+                "sender_display": sender_display,
+
+                "sender": sender,
+
+                "content": extract_body(msg)
 
             })
 
-        except Exception:
-            continue
+        except Exception as e:
+
+            print("MAIL HATASI:", e)
+
+    mail.logout()
 
     return result
-def get_inbox(count=20):
-    return get_folder_mails("INBOX", count)
-
+# ===========================
+# KLASÖRLER
+# ===========================
 
 def get_inbox(count=20):
     return get_folder_mails("INBOX", count)
 
 
 def get_sent(count=20):
-    return get_folder_mails("INBOX.Sent", count)
 
+    folders = [
+        "Sent",
+        "Sent Items",
+        "INBOX.Sent",
+        "INBOX.Sent Items"
+    ]
 
-def get_spam(count=20):
-    return get_folder_mails("INBOX.spam", count)
-
-
-def get_trash(count=20):
-    return get_folder_mails("INBOX.Trash", count)
-
-
-def get_drafts(count=20):
-    return get_folder_mails("INBOX.Drafts", count)
-
-
-def get_archive(count=20):
-    return get_folder_mails("INBOX.Archive", count)
-def get_last_mails(count=5):
-    mail = connect_mail()
-    _, messages = mail.search(None, "ALL")
-    mail_ids = messages[0].split()
-
-    result = []
-    
-
-    for i in reversed(mail_ids[-count:]):
-        try:
-            _, msg_data = mail.fetch(i, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
-
-            # 🛠️ Konu Başlığı Çözümü
-            subject, encoding = decode_header(msg["Subject"])[0]
-            if isinstance(subject, bytes):
-                subject = subject.decode(encoding if encoding else "utf-8", errors="ignore")
-
-            # 🛠️ Gönderici (Kimden) Çözümü - Bozuk görünen yer burasıydı
-            from_raw = msg.get("From")
-            from_parts = decode_header(from_raw)
-            from_text = ""
-            for part, enc in from_parts:
-                if isinstance(part, bytes):
-                    from_text += part.decode(enc if enc else "utf-8", errors="ignore")
-                else:
-                    from_text += str(part)
-            
-            # E-posta adresini saf halde temizlemek için (örn: "İsim <mail@mail.com>" -> "mail@mail.com")
-            import re
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+', from_text)
-            sender_email = email_match.group(0) if email_match else from_text
-
-            # 🛠️ İçerik Çözümü
-            body = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            body = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
-                        break
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    body = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
-
-            # Metni temizleme ve kırpma
-            body = body.strip()
-
-            result.append({
-                "id": i.decode(),
-                "subject": subject,
-                "sender_display": from_text, # Ekranda güzel görünen isim
-                "sender": sender_email,      # Arka planda mail atılacak gerçek adres
-                "content": body[:1000]
-            })
-        except Exception as e:
-            print(f"Bir mail ayrıştırılırken hata atlandı: {e}")
-            continue
-
-    return result
-def get_folder_mails(folder="INBOX", count=20):
-
-    mail = connect_mail(folder)
-
-    _, messages = mail.search(None, "ALL")
-    mail_ids = messages[0].split()
-
-    result = []
-
-    for i in reversed(mail_ids[-count:]):
+    for folder in folders:
 
         try:
-
-            _, msg_data = mail.fetch(i, "(RFC822)")
-            raw = msg_data[0][1]
-
-            msg = email.message_from_bytes(raw)
-
-            subject, encoding = decode_header(msg["Subject"])[0]
-
-            if isinstance(subject, bytes):
-                subject = subject.decode(
-                    encoding if encoding else "utf-8",
-                    errors="ignore"
-                )
-
-            from_raw = msg.get("From")
-
-            sender = from_raw
-
-            body = ""
-
-            if msg.is_multipart():
-
-                for part in msg.walk():
-
-                    if part.get_content_type() == "text/plain":
-
-                        payload = part.get_payload(decode=True)
-
-                        if payload:
-
-                            body = payload.decode(
-                                part.get_content_charset() or "utf-8",
-                                errors="ignore"
-                            )
-
-                        break
-
-            else:
-
-                payload = msg.get_payload(decode=True)
-
-                if payload:
-
-                    body = payload.decode(
-                        msg.get_content_charset() or "utf-8",
-                        errors="ignore"
-                    )
-
-            result.append({
-                "id": i.decode(),
-                "subject": subject,
-                "sender": sender,
-                "content": body[:1000]
-            })
-
+            return get_folder_mails(folder, count)
         except:
             pass
 
-    return result
-def get_inbox():
-    return get_folder_mails("INBOX")
+    return []
 
 
-def get_sent():
-    return get_folder_mails("Sent")
+def get_spam(count=20):
+
+    folders = [
+        "Spam",
+        "Junk",
+        "INBOX.Spam",
+        "INBOX.Junk"
+    ]
+
+    for folder in folders:
+
+        try:
+            return get_folder_mails(folder, count)
+        except:
+            pass
+
+    return []
 
 
-def get_spam():
-    return get_folder_mails("Spam")
+def get_trash(count=20):
+
+    folders = [
+        "Trash",
+        "Deleted",
+        "Deleted Items",
+        "INBOX.Trash"
+    ]
+
+    for folder in folders:
+
+        try:
+            return get_folder_mails(folder, count)
+        except:
+            pass
+
+    return []
 
 
-def get_trash():
-    return get_folder_mails("Trash")
+def get_drafts(count=20):
+
+    folders = [
+        "Drafts",
+        "INBOX.Drafts"
+    ]
+
+    for folder in folders:
+
+        try:
+            return get_folder_mails(folder, count)
+        except:
+            pass
+
+    return []
 
 
-def get_drafts():
-    return get_folder_mails("Drafts")
+def get_archive(count=20):
+
+    folders = [
+        "Archive",
+        "Archives",
+        "INBOX.Archive"
+    ]
+
+    for folder in folders:
+
+        try:
+            return get_folder_mails(folder, count)
+        except:
+            pass
+
+    return []
+
+
+# ===========================
+# GPT MAİL ANALİZİ
+# ===========================
+
 def analyze_mail(text):
-    prompt = f"Bu maili analiz et:\n- önemli mi\n- kısa özet\n- yapılması gereken\n- cevap öner\n\nMail:\n{text}"
+
+    prompt = f"""
+Aşağıdaki e-postayı analiz et.
+
+1. Kısa özet
+2. Önem derecesi
+3. Yapılması gerekenler
+4. Profesyonel cevap önerisi
+
+Mail:
+
+{text}
+"""
+
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
+
+        model="gpt-5.5",
+
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
     )
+
     return response.choices[0].message.content
+# ===========================
+# MAIL GÖNDER
+# ===========================
 
 def send_reply_mail(to_email, subject, body):
+
     msg = MIMEMultipart()
+
     msg["From"] = EMAIL
     msg["To"] = to_email
     msg["Subject"] = subject
 
-    msg.attach(MIMEText(body, "plain", "utf-8"))
-    
+    msg.attach(
+        MIMEText(body, "plain", "utf-8")
+    )
+
+    server = smtplib.SMTP(
+        SMTP_SERVER,
+        SMTP_PORT
+    )
+
+    server.starttls()
+
+    server.login(
+        EMAIL,
+        PASSWORD
+    )
+
+    server.sendmail(
+        EMAIL,
+        to_email,
+        msg.as_string()
+    )
+
+    server.quit()
+
+    return True
+
+
+# ===========================
+# YENİ MAIL GÖNDER
+# ===========================
+
+def send_new_mail(
+        to_email,
+        subject,
+        body):
+
+    msg = MIMEMultipart()
+
+    msg["From"] = EMAIL
+    msg["To"] = to_email
+    msg["Subject"] = subject
+
+    msg.attach(
+        MIMEText(body, "plain", "utf-8")
+    )
+
+    server = smtplib.SMTP(
+        SMTP_SERVER,
+        SMTP_PORT
+    )
+
+    server.starttls()
+
+    server.login(
+        EMAIL,
+        PASSWORD
+    )
+
+    server.sendmail(
+        EMAIL,
+        to_email,
+        msg.as_string()
+    )
+
+    server.quit()
+
+    return True
+
+
+# ===========================
+# TEST
+# ===========================
+
+if __name__ == "__main__":
+
+    print("=== KLASÖRLER ===")
 
     try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(EMAIL, PASSWORD)
-        server.sendmail(EMAIL, to_email, msg.as_string())
-        server.quit()
-        return True
+        list_folders()
     except Exception as e:
-        raise Exception(f"E-posta gönderilirken kritik hata: {str(e)}")
-    
-def list_folders():
-    mail = imaplib.IMAP4_SSL(IMAP_SERVER)
-    mail.login(EMAIL, PASSWORD)
+        print(e)
 
-    status, folders = mail.list()
+    print()
 
-    print("=== MAIL KLASÖRLERİ ===")
+    print("=== GELEN KUTUSU ===")
 
-    for folder in folders:
-        print(folder.decode())
+    try:
 
-    mail.logout()    
-    
+        mails = get_inbox(5)
+
+        print("Mail Sayısı:", len(mails))
+
+        for mail in mails:
+
+            print("-" * 50)
+
+            print(mail["sender"])
+
+            print(mail["subject"])
+
+    except Exception as e:
+
+        print(e)
