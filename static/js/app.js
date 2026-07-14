@@ -61,12 +61,18 @@ if (fileInput.files.length > 0) {
 
     try {
 
-    const response = await fetch("/", {
-        method: "POST",
-        body: formData
-    });
+    console.log("FETCH BAŞLIYOR");
+    console.log(formData.get("action"));
+    console.log(formData.get("soru"));
 
-    const data = await response.json();
+    const response = await fetch("/", {
+    method: "POST",
+    body: formData
+});
+
+console.log(response.status);
+
+const data = await response.json();
 
     if (data.status === "success") {
 

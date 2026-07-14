@@ -1,3 +1,4 @@
+from routes.mail_page import mail_bp
 from templates import render_chat_list
 from chat import (
     get_client,
@@ -19,7 +20,6 @@ from flask import (
     Flask,
     request,
     render_template,
-    render_template_string,
     redirect,
     url_for,
     session,
@@ -41,40 +41,12 @@ from mail import (
 ensure_users_file()
 
 app = Flask(__name__)
+app.register_blueprint(mail_bp)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "gizli123")
 
 # --- DOSYA İŞLEMLERİ ---
 
 DATA_FILE = "data.json"
-
-
-BASE_HTML = """
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<title>KipGPT</title>
-
-<link rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v=5">
-
-<script defer
-        src="{{ url_for('static', filename='js/app.js') }}?v=5"></script>
-
-</head>
-
-<body>
-
-{{ content|safe }}
-
-</body>
-</html>
-"""
-
-def render_page(content):
-    return render_template_string(BASE_HTML, content=content)
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -98,18 +70,11 @@ def register():
                 save_users(users)
                 return redirect(url_for("login"))
     # render registration form
-    content = '''
-    <div class="card">
-        <h2>Kayıt Ol</h2>
-        <form method="post">
-            <input name="username" placeholder="Kullanıcı adı">
-            <input name="password" type="password" placeholder="Şifre">
-            <button class="btn btn-blue" type="submit" style="width:100%;">Kayıt Ol</button>
-        </form>
-        <p style="font-size:14px; text-align:center;">Zaten hesabın var mı? <a href="/login" style="color:#0284c7;">Giriş Yap</a></p>
-    </div>
-    '''
-    return render_page(content)
+    return render_template(
+    "register.html",
+    error=error,
+    title="Kayıt Ol"
+)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -392,46 +357,24 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
         </div>
         """
 
-    content_html = f"""
-                    <div class="layout" style="justify-content:center;overflow-y:auto;padding:20px;">
+# Ensure variables exist before rendering (provide safe defaults if missing)
+    error = locals().get("error") if "error" in locals() else None
+    folder_menu = locals().get("folder_menu") if "folder_menu" in locals() else None
+    folder = locals().get("folder") if "folder" in locals() else None
+    search = locals().get("search") if "search" in locals() else None
+    mail_items_html = locals().get("mail_items_html") if "mail_items_html" in locals() else ""
 
-<div class="card" style="max-width:900px;width:100%;">
-
-<h2>E-Posta Asistanı</h2>
-
-<a href="/">
-<button class="btn btn-blue">Sohbete Dön</button>
-</a>
-
-{"<div class='error'>"+error+"</div>" if error else ""}
-
-{folder_menu}
-<form method="get" action="/mail" style="margin-bottom:20px;">
-    <input type="hidden" name="folder" value="{folder}">
-    <input
-        type="text"
-        name="search"
-        value="{search}"
-        placeholder="🔍 Mail ara..."
-        style="
-            width:100%;
-            padding:10px;
-            border-radius:8px;
-            border:1px solid #cbd5e1;
-            box-sizing:border-box;
-        ">
-</form>
-
-{ai_preview_html}
-
-{mail_items_html}
-
-</div>
-
-</div>
-"""
-
-    return render_page(content_html)
+    # Render mail template into a variable (do not return here so subsequent routes remain reachable)
+    return render_template(
+    "mail.html",
+    title="Mail",
+    error=error,
+    folder_menu=folder_menu,
+    folder=folder,
+    search=search,
+    ai_preview_html=ai_preview_html,
+    mail_items_html=mail_items_html,
+)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -608,62 +551,14 @@ def index():
             messages_html += f'<div class="{css}"><b class="bot-text">KipGPT:</b><br><span class="bot-text">{content}</span>{extra_image}</div>'
     
 
-    content = f"""
-    <div class="layout">
-        <div class="sidebar">
-            <h2>AI Asistan</h2>
-            <div class="user-box"><b>Kullanıcı:</b> {username}</div>
-            <a class="new-chat" href="/new_chat">+ Yeni Sohbet</a>
-            <div class="chat-list">{chat_list_html}</div>
-        </div>
-        <div class="main">
-            <div class="topbar">
-                <div><b>Aktif Sohbet:</b> {active_chat}</div>
-                <div class="right-buttons">
-                    <a href="/mail"><button class="btn btn-green">📧 Mailler</button></a>
-                    <form method="post" action="/clear_chat" style="margin:0;">
-                        <button class="btn btn-red" type="submit">Temizle</button>
-                    </form>
-                    <a href="/logout"><button class="btn btn-blue">Çıkış</button></a>
-                </div>
-            </div>
-            
-            <div class="messages">{messages_html}</div>
-
-            <div class="bottom">
-    <form
-        class="input-container"
-        onsubmit="sendTextMessage(event)"
-        enctype="multipart/form-data">
-
-        <label for="file-input"
-               style="cursor:pointer;font-size:28px;color:#3b82f6;font-weight:bold;padding:0 5px;">+</label>
-
-        <input id="file-input"
-               type="file"
-               name="image"
-               accept="image/*,application/pdf"
-               style="display:none;">
-
-        <input type="hidden"
-               name="action"
-               value="text">
-
-        <input id="chat-input"
-               type="text"
-               name="soru"
-               placeholder="Mesajınızı yazın..."
-               autocomplete="off"
-               autofocus>
-
-        <button class="btn btn-blue" type="submit">Gönder</button>
-
-    </form>
-</div>
-        </div>
-    </div>
-    """
-    return render_page(content)
+    return render_template(
+    "chat.html",
+    username=username,
+    active_chat=active_chat,
+    chat_list_html=chat_list_html,
+    messages_html=messages_html,
+    title="KipGPT",
+)
 @app.route("/test")
 def test():
     import os
@@ -678,3 +573,4 @@ if __name__ == "__main__":
     # Render'ın verdiği PORT'u kullan, yoksa 10000 kullan
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+   

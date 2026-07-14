@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card">
+
+<h2>Kayıt Ol</h2>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+<form method="post">
+
+<input
+name="username"
+placeholder="Kullanıcı Adı"
+required>
+
+<input
+type="password"
+name="password"
+placeholder="Şifre"
+required>
+
+<button
+class="btn btn-blue"
+type="submit"
+style="width:100%;">
+
+Kayıt Ol
+
+</button>
+
+</form>
+
+<p style="text-align:center;margin-top:20px;">
+
+<a href="/login">
+
+Zaten hesabın var mı? Giriş Yap
+
+</a>
+
+</p>
+
+</div>
+
+{% endblock %}
