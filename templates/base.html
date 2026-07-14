@@ -1,20 +1,30 @@
-BASE_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
-<meta charset="UTF-8">
 
-<link rel="stylesheet"
-href="{{ url_for('static', filename='style.css') }}">
+    <meta charset="UTF-8">
 
-<script defer
-src="{{ url_for('static', filename='app.js') }}"></script>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+
+    <title>{{ title if title else "KipGPT" }}</title>
+
+    <link rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v=5">
+
+    {% block head %}{% endblock %}
 
 </head>
+
 <body>
 
-{{ content|safe }}
+{% block content %}{% endblock %}
+
+<script src="{{ url_for('static', filename='js/app.js') }}?v=5"></script>
+
+{% block scripts %}{% endblock %}
 
 </body>
+
 </html>
-"""

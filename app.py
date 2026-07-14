@@ -15,7 +15,16 @@ from users import (
     ensure_users_file
 )
 from storage import load_data, save_data
-from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
+from flask import (
+    Flask,
+    request,
+    render_template,
+    render_template_string,
+    redirect,
+    url_for,
+    session,
+    jsonify,
+)
 import os
 import json
 import re
@@ -49,10 +58,10 @@ BASE_HTML = """
 <title>KipGPT</title>
 
 <link rel="stylesheet"
-      href="{{ url_for('static', filename='style.css') }}?v=5">
+      href="{{ url_for('static', filename='css/style.css') }}?v=5">
 
 <script defer
-        src="{{ url_for('static', filename='app.js') }}?v=5"></script>
+        src="{{ url_for('static', filename='js/app.js') }}?v=5"></script>
 
 </head>
 
@@ -124,54 +133,11 @@ def login():
 
         error = "Kullanıcı adı veya şifre hatalı."
 
-    content = f"""
-<div class="card">
-
-    <h2>Giriş Yap</h2>
-
-    {"<div class='error'>" + error + "</div>" if error else ""}
-
-    <form method="post">
-
-        <input
-            name="username"
-            placeholder="Kullanıcı adı"
-            required>
-
-        <input
-            name="password"
-            type="password"
-            placeholder="Şifre"
-            required>
-
-        <button
-            class="btn btn-blue"
-            type="submit"
-            style="width:100%;">
-
-            Giriş Yap
-
-        </button>
-
-    </form>
-
-    <p style="margin-top:20px;text-align:center;">
-
-        Hesabın yok mu?
-
-        <a href="/register"
-           style="color:#38bdf8;font-weight:bold;">
-
-            Kayıt Ol
-
-        </a>
-
-    </p>
-
-</div>
-"""
-
-    return render_page(content)
+    return render_template(
+    "login.html",
+    error=error,
+    title="Giriş Yap"
+)
       
 @app.route("/logout")
 def logout():
@@ -245,6 +211,9 @@ def mail_page():
 
 </div>
 """
+
+    # Kullanıcının arama sorgusu (küçük harfe çevir ve baş/son boşlukları temizle)
+    search = request.args.get("search", "").strip().lower()
 
     try:
         import inspect
@@ -346,6 +315,18 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
     
     print("MAIL SAYISI =", len(mailler))
     print(mailler[:1])
+
+    if search:
+        # ensure search is lowercase for comparisons
+        s = search.lower()
+        mailler = [
+            m for m in mailler
+            if (
+                s in m.get("subject", "").lower()
+                or s in m.get("sender", "").lower()
+                or s in m.get("content", "").lower()
+            )
+        ]
     
     if mailler:
         for m in mailler:
@@ -425,6 +406,21 @@ Lütfen daha önce hazırlanan taslağı, kullanıcının yeni düzenleme isteğ
 {"<div class='error'>"+error+"</div>" if error else ""}
 
 {folder_menu}
+<form method="get" action="/mail" style="margin-bottom:20px;">
+    <input type="hidden" name="folder" value="{folder}">
+    <input
+        type="text"
+        name="search"
+        value="{search}"
+        placeholder="🔍 Mail ara..."
+        style="
+            width:100%;
+            padding:10px;
+            border-radius:8px;
+            border:1px solid #cbd5e1;
+            box-sizing:border-box;
+        ">
+</form>
 
 {ai_preview_html}
 
