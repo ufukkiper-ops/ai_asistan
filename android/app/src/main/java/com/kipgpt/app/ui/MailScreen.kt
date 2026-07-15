@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.StarOutline
@@ -41,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +62,7 @@ import com.kipgpt.app.data.AttachmentSaver
 import com.kipgpt.app.data.MailAttachment
 import com.kipgpt.app.data.MailFolder
 import com.kipgpt.app.data.MailItem
+import com.kipgpt.app.data.SpeechHelper
 import com.kipgpt.app.data.TranslateRequest
 import kotlinx.coroutines.launch
 
@@ -347,8 +351,14 @@ fun MailDetailScreen(
     val translatedLang = remember { mutableStateOf<String?>(null) }
     val loading = remember { mutableStateOf(false) }
     val downloadingIndex = remember { mutableStateOf<Int?>(null) }
+    val speaking = remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val speechHelper = remember { SpeechHelper(context) }
+
+    DisposableEffect(speechHelper) {
+        onDispose { speechHelper.shutdown() }
+    }
 
     fun downloadAttachment(att: MailAttachment) {
         scope.launch {
@@ -410,6 +420,22 @@ fun MailDetailScreen(
                     }
                 },
                 actions = {
+                    if (speechHelper.isSpeakAvailable()) {
+                        IconButton(onClick = {
+                            if (speechHelper.isSpeaking()) {
+                                speechHelper.stopSpeaking()
+                                speaking.value = false
+                            } else {
+                                speechHelper.speak(content.value)
+                                speaking.value = true
+                            }
+                        }) {
+                            Icon(
+                                if (speaking.value) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                contentDescription = "Maili dinle",
+                            )
+                        }
+                    }
                     IconButton(onClick = { translate("tr") }) {
                         Icon(Icons.Default.Translate, contentDescription = "Çevir")
                     }

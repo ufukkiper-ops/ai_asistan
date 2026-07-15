@@ -715,6 +715,62 @@ button{
     width:8px;
 }
 
+/* Speech */
+
+.speech-mic-btn,
+.speech-speak-btn,
+.speech-stop-btn{
+    border:1px solid #d1d5db;
+    background:#fff;
+    color:#374151;
+    border-radius:10px;
+    cursor:pointer;
+    transition:.15s;
+}
+
+.speech-mic-btn{
+    width:42px;
+    height:42px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+}
+
+.speech-mic-btn.is-listening{
+    background:#fee2e2;
+    border-color:#ef4444;
+    color:#b91c1c;
+}
+
+.speech-stop-btn{
+    padding:10px 14px;
+    margin-left:8px;
+    font-size:13px;
+}
+
+.msg-bot-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:6px;
+}
+
+.msg-speak-btn{
+    width:32px;
+    height:32px;
+    border-radius:8px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+}
+
+.msg-bot-text{
+    line-height:1.5;
+}
+
 ::-webkit-scrollbar-thumb{
     background:#d1d5db;
     border-radius:20px;

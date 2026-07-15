@@ -1,5 +1,9 @@
 package com.kipgpt.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +26,9 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,12 +56,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.kipgpt.app.data.ApiClient
 import com.kipgpt.app.data.ChatMessage
 import com.kipgpt.app.data.ChatSummary
 import com.kipgpt.app.data.SendRequest
+import com.kipgpt.app.data.SpeechHelper
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +84,44 @@ fun ChatScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val speechHelper = remember { SpeechHelper(context) }
+    val listening = remember { mutableStateOf(false) }
+
+    DisposableEffect(speechHelper) {
+        onDispose { speechHelper.shutdown() }
+    }
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            scope.launch { snackbar.showSnackbar("Mikrofon izni gerekli") }
+        }
+    }
+
+    fun startVoiceInput() {
+        if (!speechHelper.isListenAvailable()) {
+            scope.launch { snackbar.showSnackbar("Cihaz sesli girişi desteklemiyor") }
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        listening.value = true
+        speechHelper.startListening(
+            onResult = { transcript ->
+                input.value = if (input.value.isBlank()) transcript else "${input.value} $transcript"
+            },
+            onError = { message ->
+                scope.launch { snackbar.showSnackbar(message) }
+            },
+            onEnd = { listening.value = false },
+        )
+    }
 
     fun loadChats(selectId: String? = null) {
         scope.launch {
@@ -265,7 +314,7 @@ fun ChatScreen(
                     ) {
                         item { Spacer(Modifier.height(4.dp)) }
                         items(messages) { message ->
-                            MessageBubble(message)
+                            MessageBubble(message, speechHelper)
                         }
                         if (sending.value) {
                             item {
@@ -298,6 +347,27 @@ fun ChatScreen(
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    IconButton(
+                        onClick = {
+                            if (listening.value) {
+                                speechHelper.stopListening()
+                                listening.value = false
+                            } else {
+                                startVoiceInput()
+                            }
+                        },
+                        enabled = !sending.value,
+                    ) {
+                        Icon(
+                            if (listening.value) Icons.Default.Stop else Icons.Default.Mic,
+                            contentDescription = "Sesle konuş",
+                            tint = if (listening.value) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        )
+                    }
                     OutlinedTextField(
                         value = input.value,
                         onValueChange = { input.value = it },
@@ -342,7 +412,7 @@ fun ChatScreen(
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(message: ChatMessage, speechHelper: SpeechHelper) {
     val isUser = message.role == "user"
     val bg = if (isUser) MaterialTheme.colorScheme.primary else Color(0xFFE8EAED)
     val fg = if (isUser) Color.White else Color(0xFF202124)
@@ -352,14 +422,36 @@ private fun MessageBubble(message: ChatMessage) {
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = align,
     ) {
-        Text(
-            text = message.content,
-            color = fg,
-            modifier = Modifier
-                .widthIn(max = 300.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(bg)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        )
+        Column(
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+        ) {
+            if (!isUser && speechHelper.isSpeakAvailable()) {
+                IconButton(
+                    onClick = {
+                        if (speechHelper.isSpeaking()) {
+                            speechHelper.stopSpeaking()
+                        } else {
+                            speechHelper.speak(message.content)
+                        }
+                    },
+                    modifier = Modifier.height(32.dp),
+                ) {
+                    Icon(
+                        if (speechHelper.isSpeaking()) Icons.Default.Stop else Icons.Default.VolumeUp,
+                        contentDescription = "Dinle",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            Text(
+                text = message.content,
+                color = fg,
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(bg)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
     }
 }

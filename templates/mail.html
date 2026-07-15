@@ -248,6 +248,12 @@
                         <button class="icon-btn" type="button" title="Okunmadı işaretle">
                             <span class="material-icons-outlined">mark_email_unread</span>
                         </button>
+                        <button class="icon-btn" type="button" id="reader-speak-btn" title="Maili sesli oku">
+                            <span class="material-icons-outlined">volume_up</span>
+                        </button>
+                        <button class="icon-btn" type="button" id="reader-stop-speak-btn" title="Sesi durdur" hidden>
+                            <span class="material-icons-outlined">stop_circle</span>
+                        </button>
                     </div>
 
                     <div class="reader-header">
@@ -317,7 +323,12 @@
                                     <input type="text" name="cc_email" id="manual-reply-cc" placeholder="Cc">
                                     <input type="text" name="bcc_email" id="manual-reply-bcc" placeholder="Bcc">
                                 </div>
-                                <textarea name="final_reply" id="manual-reply-body" class="manual-reply-editor" rows="8" placeholder="Yanıtınızı buraya yazın..."></textarea>
+                                <div class="speech-field-wrap">
+                                    <textarea name="final_reply" id="manual-reply-body" class="manual-reply-editor" rows="8" placeholder="Yanıtınızı buraya yazın..."></textarea>
+                                    <button type="button" class="speech-mic-btn speech-field-mic" id="manual-reply-mic" title="Sesle yaz">
+                                        <span class="material-icons-outlined">mic</span>
+                                    </button>
+                                </div>
                                 <div id="manual-reply-attach-preview" class="compose-file-preview" hidden></div>
                                 <div class="manual-reply-actions">
                                     <label class="attach-btn" title="Dosya ekle">
@@ -347,12 +358,17 @@
                                 <input type="hidden" name="subject" id="ai-subject">
                                 <input type="hidden" name="content" id="ai-content">
                                 <label class="ai-instruction-label" for="ai-user-instruction">İpucu / Talimat</label>
-                                <textarea
-                                    id="ai-user-instruction"
-                                    name="user_instruction"
-                                    placeholder="Yanıtın nasıl olmasını istiyorsunuz? Örn: Daha kısa yaz, resmi dil kullan, fiyat teklifini ekle..."
-                                    rows="3"
-                                    required></textarea>
+                                <div class="speech-field-wrap">
+                                    <textarea
+                                        id="ai-user-instruction"
+                                        name="user_instruction"
+                                        placeholder="Yanıtın nasıl olmasını istiyorsunuz? Örn: Daha kısa yaz, resmi dil kullan, fiyat teklifini ekle..."
+                                        rows="4"
+                                        required></textarea>
+                                    <button type="button" class="speech-mic-btn speech-field-mic" id="ai-instruction-mic" title="Sesle yaz">
+                                        <span class="material-icons-outlined">mic</span>
+                                    </button>
+                                </div>
                                 <button type="submit" class="ai-generate-btn">
                                     <span class="material-icons-outlined">auto_awesome</span>
                                     Yanıt Oluştur
@@ -399,7 +415,12 @@
                 <input type="text" name="bcc_email" placeholder="Bcc">
             </div>
             <input type="text" name="new_subject" placeholder="Konu">
-            <textarea name="new_body" placeholder="Mesajınızı yazın..." rows="8"></textarea>
+            <div class="speech-field-wrap">
+                <textarea name="new_body" id="compose-body" placeholder="Mesajınızı yazın..." rows="8"></textarea>
+                <button type="button" class="speech-mic-btn speech-field-mic" id="compose-mic" title="Sesle yaz">
+                    <span class="material-icons-outlined">mic</span>
+                </button>
+            </div>
             <div id="compose-file-preview" class="compose-file-preview" hidden></div>
             <div class="compose-footer">
                 <label class="attach-btn" title="Dosya ekle">
@@ -624,7 +645,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=41"></script>
+<script src="{{ url_for('static', filename='js/speech.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=42"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
 {% endblock %}

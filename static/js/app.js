@@ -64,11 +64,90 @@ function appendMessage(role, text, fileMeta) {
 
     const label = role === "user" ? "Sen" : "Kip Asistan";
     const fileHtml = renderFileBadge(fileMeta);
-    div.innerHTML = `<b>${label}:</b><br>${escapeHtml(text).replace(/\n/g, "<br>")}${fileHtml}`;
+    const bodyHtml = escapeHtml(text).replace(/\n/g, "<br>");
+
+    if (role === "user") {
+        div.innerHTML = `<b>${label}:</b><br>${bodyHtml}${fileHtml}`;
+    } else {
+        div.innerHTML =
+            `<div class="msg-bot-head">` +
+            `<b>${label}:</b>` +
+            (window.KipSpeech && KipSpeech.isSpeakSupported()
+                ? `<button type="button" class="speech-speak-btn msg-speak-btn" title="Dinle">` +
+                  `<span class="speech-speak-icon">🔊</span></button>`
+                : "") +
+            `</div>` +
+            `<div class="msg-bot-text">${bodyHtml}</div>${fileHtml}`;
+
+        const speakBtn = div.querySelector(".msg-speak-btn");
+        if (speakBtn) {
+            speakBtn.addEventListener("click", function () {
+                if (KipSpeech.isSpeaking()) {
+                    KipSpeech.stopSpeaking();
+                    updateChatStopButton();
+                    return;
+                }
+                KipSpeech.speak(text);
+                updateChatStopButton();
+            });
+        }
+    }
 
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
     return div;
+}
+
+function enhanceExistingBotMessages() {
+    if (!window.KipSpeech || !KipSpeech.isSpeakSupported()) return;
+
+    document.querySelectorAll(".msg-bot").forEach(function (msg) {
+        if (msg.querySelector(".msg-speak-btn")) return;
+
+        const textEl = msg.querySelector(".bot-text:last-of-type") || msg.querySelector(".bot-text");
+        let text = textEl ? textEl.textContent : msg.textContent;
+        text = (text || "").replace(/^Kip Asistan:\s*/i, "").trim();
+        if (!text) return;
+
+        const head = document.createElement("div");
+        head.className = "msg-bot-head";
+        head.innerHTML = "<b>Kip Asistan:</b>";
+
+        const speakBtn = document.createElement("button");
+        speakBtn.type = "button";
+        speakBtn.className = "speech-speak-btn msg-speak-btn";
+        speakBtn.title = "Dinle";
+        speakBtn.innerHTML = '<span class="speech-speak-icon">🔊</span>';
+        speakBtn.addEventListener("click", function () {
+            if (KipSpeech.isSpeaking()) {
+                KipSpeech.stopSpeaking();
+                updateChatStopButton();
+                return;
+            }
+            KipSpeech.speak(text);
+            updateChatStopButton();
+        });
+        head.appendChild(speakBtn);
+
+        const body = document.createElement("div");
+        body.className = "msg-bot-text";
+        Array.from(msg.childNodes).forEach(function (child) {
+            if (child.nodeType === Node.ELEMENT_NODE && child.tagName === "B") {
+                return;
+            }
+            body.appendChild(child);
+        });
+
+        msg.innerHTML = "";
+        msg.appendChild(head);
+        msg.appendChild(body);
+    });
+}
+
+function updateChatStopButton() {
+    const stopBtn = document.getElementById("chat-stop-speak-btn");
+    if (!stopBtn || !window.KipSpeech) return;
+    stopBtn.hidden = !KipSpeech.isSpeaking();
 }
 
 function updateActiveChatTitle(title) {
@@ -144,6 +223,22 @@ function bindChatPage() {
         clearBtn.addEventListener("click", clearSelectedFilePreview);
     }
 
+    const chatMicBtn = document.getElementById("chat-mic-btn");
+    const chatInput = document.getElementById("chat-input");
+    if (chatMicBtn && chatInput && window.KipSpeech) {
+        KipSpeech.bindMicToField(chatMicBtn, chatInput, { append: true });
+    }
+
+    const chatStopBtn = document.getElementById("chat-stop-speak-btn");
+    if (chatStopBtn && window.KipSpeech) {
+        chatStopBtn.addEventListener("click", function () {
+            KipSpeech.stopSpeaking();
+            updateChatStopButton();
+        });
+    }
+
+    enhanceExistingBotMessages();
+
     chatForm.addEventListener("submit", sendTextMessage);
 }
 
@@ -200,7 +295,8 @@ async function sendTextMessage(event) {
         }
 
         if (data.status === "success") {
-            loading.innerHTML = "<b>Kip Asistan:</b><br>" + escapeHtml(data.answer).replace(/\n/g, "<br>");
+            loading.remove();
+            appendMessage("bot", data.answer, null);
             if (data.chat_title) {
                 updateActiveChatTitle(data.chat_title);
             }

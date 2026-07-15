@@ -1269,4 +1269,61 @@
         }, { passive: true });
     }
 
+    setupSpeechControls();
+
+    function setupSpeechControls() {
+        if (!window.KipSpeech) return;
+
+        const readerSpeakBtn = document.getElementById("reader-speak-btn");
+        const readerStopBtn = document.getElementById("reader-stop-speak-btn");
+
+        function getReadableMailText() {
+            const activeBody = getActiveBodyElement();
+            if (activeBody) {
+                return KipSpeech.stripForSpeech(activeBody.textContent || "");
+            }
+            return KipSpeech.stripForSpeech(currentOriginalContent || "");
+        }
+
+        function updateReaderStopButton() {
+            if (!readerStopBtn) return;
+            readerStopBtn.hidden = !KipSpeech.isSpeaking();
+        }
+
+        if (readerSpeakBtn) {
+            readerSpeakBtn.addEventListener("click", function () {
+                if (KipSpeech.isSpeaking()) {
+                    KipSpeech.stopSpeaking();
+                    updateReaderStopButton();
+                    return;
+                }
+                const text = getReadableMailText();
+                if (!text) return;
+                KipSpeech.speak(text);
+                updateReaderStopButton();
+                window.setTimeout(updateReaderStopButton, 300);
+            });
+        }
+
+        if (readerStopBtn) {
+            readerStopBtn.addEventListener("click", function () {
+                KipSpeech.stopSpeaking();
+                updateReaderStopButton();
+            });
+        }
+
+        [
+            ["manual-reply-mic", "manual-reply-body"],
+            ["ai-instruction-mic", "ai-user-instruction"],
+            ["ai-draft-mic", "ai-draft-editor"],
+            ["compose-mic", "compose-body"],
+        ].forEach(function (pair) {
+            const button = document.getElementById(pair[0]);
+            const field = document.getElementById(pair[1]);
+            if (button && field) {
+                KipSpeech.bindMicToField(button, field, { append: true });
+            }
+        });
+    }
+
 })();

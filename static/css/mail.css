@@ -1643,6 +1643,57 @@ body.dialog-open .account-remove-form {
     gap: 8px;
 }
 
+.speech-field-wrap {
+    position: relative;
+}
+
+.speech-field-wrap textarea,
+.speech-field-wrap .manual-reply-editor,
+.speech-field-wrap .ai-editor {
+    width: 100%;
+    padding-right: 48px;
+}
+
+.speech-field-mic {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--gmail-border);
+    border-radius: 50%;
+    background: #fff;
+    color: var(--gmail-text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.speech-field-mic.is-listening {
+    background: #fce8e6;
+    border-color: #d93025;
+    color: #d93025;
+}
+
+.speech-mic-btn {
+    border: 1px solid var(--gmail-border);
+    background: #fff;
+    color: var(--gmail-text-secondary);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.speech-mic-btn.is-listening {
+    background: #fce8e6;
+    border-color: #d93025;
+    color: #d93025;
+}
+
+#reader-stop-speak-btn:not([hidden]) {
+    color: #d93025;
+}
+
 .mail-attach-item:hover {
     background: #eef2ff;
 }
