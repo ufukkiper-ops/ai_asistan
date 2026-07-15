@@ -20,6 +20,7 @@
     const readerDate = document.getElementById("reader-date");
     const readerAvatar = document.getElementById("reader-avatar");
     const readerBody = document.getElementById("reader-body");
+    const readerThread = document.getElementById("reader-thread");
     const readerAttachments = document.getElementById("reader-attachments");
     const translateButtons = document.querySelectorAll(".translate-btn");
     const currentFolder = document.body.dataset.mailFolder || "inbox";
@@ -88,10 +89,25 @@
     let currentTranslationLang = null;
     const translationCache = {};
 
+    function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text || "";
+        return div.innerHTML;
+    }
+
+    function getActiveBodyElement() {
+        if (readerThread && !readerThread.hidden) {
+            const latest = readerThread.querySelector(".thread-msg.is-latest .thread-msg-body");
+            if (latest) return latest;
+        }
+        return readerBody;
+    }
+
     function setReaderBody(text, translated) {
-        if (!readerBody) return;
-        readerBody.textContent = text || "(İçerik yok)";
-        readerBody.classList.toggle("is-translated", Boolean(translated));
+        const target = getActiveBodyElement();
+        if (!target) return;
+        target.textContent = text || "(İçerik yok)";
+        target.classList.toggle("is-translated", Boolean(translated));
     }
 
     function updateTranslateButtons() {
@@ -129,7 +145,8 @@
     }
 
     async function translateMail(targetLang) {
-        if (!currentOriginalContent || !readerBody) return;
+        const bodyEl = getActiveBodyElement();
+        if (!currentOriginalContent || !bodyEl) return;
 
         if (currentTranslationLang === targetLang) {
             showOriginalContent();
@@ -143,11 +160,11 @@
             return;
         }
 
-        readerBody.classList.add("is-translating");
+        bodyEl.classList.add("is-translating");
         updateTranslateButtons();
 
-        const previousText = readerBody.textContent;
-        readerBody.textContent = "Çeviri hazırlanıyor...";
+        const previousText = bodyEl.textContent;
+        bodyEl.textContent = "Çeviri hazırlanıyor...";
 
         try {
             const response = await fetch("/mail/translate", {
@@ -172,7 +189,7 @@
             setReaderBody(previousText, false);
             alert(err.message || "Çeviri sırasında hata oluştu.");
         } finally {
-            readerBody.classList.remove("is-translating");
+            bodyEl.classList.remove("is-translating");
             updateTranslateButtons();
         }
     }
@@ -183,12 +200,12 @@
         });
     });
 
-    function renderAttachments(mail) {
-        if (!readerAttachments) return;
+    function renderMessageAttachments(mail, container) {
+        if (!container) return;
         const attachments = mail.attachments || [];
         if (!attachments.length) {
-            readerAttachments.innerHTML = "";
-            readerAttachments.hidden = true;
+            container.innerHTML = "";
+            container.hidden = true;
             return;
         }
 
@@ -206,8 +223,122 @@
             }
         });
         html += "</div>";
-        readerAttachments.innerHTML = html;
-        readerAttachments.hidden = false;
+        container.innerHTML = html;
+        container.hidden = false;
+    }
+
+    function renderAttachments(mail) {
+        if (!readerAttachments) return;
+        renderMessageAttachments(mail, readerAttachments);
+    }
+
+    function buildThreadAttachmentsHtml(mail) {
+        const attachments = mail.attachments || [];
+        if (!attachments.length) return "";
+
+        let html = '<div class="thread-msg-attachments">';
+        attachments.forEach(function (att) {
+            const url = `/mail/attachment?mail_id=${encodeURIComponent(mail.id)}&index=${att.index}&folder=${encodeURIComponent(currentFolder)}`;
+            if (att.is_image && att.preview) {
+                html += `<a class="mail-attach-item" href="${url}" download title="İndir: ${att.filename}">` +
+                    `<img src="${att.preview}" class="mail-attach-thumb" alt="${att.filename}">` +
+                    `<span class="mail-attach-name">${att.filename}</span></a>`;
+            } else {
+                html += `<a class="mail-attach-item" href="${url}" download title="İndir: ${att.filename}">` +
+                    `<span class="mail-attach-icon">📎</span>` +
+                    `<span class="mail-attach-name">${att.filename}</span></a>`;
+            }
+        });
+        html += "</div>";
+        return html;
+    }
+
+    function renderThreadView(mail) {
+        if (!readerThread) return false;
+
+        const messages = (mail.thread_messages || []).filter(Boolean);
+        if (messages.length <= 1) {
+            readerThread.hidden = true;
+            readerThread.innerHTML = "";
+            if (readerBody) readerBody.hidden = false;
+            return false;
+        }
+
+        const latest = messages[0];
+        const older = messages.slice(1);
+        let html = "";
+
+        html += '<article class="thread-msg is-latest is-expanded" data-mail-id="' + escapeHtml(latest.id) + '">';
+        html += '<div class="thread-msg-header thread-msg-header-static">';
+        html += '<span class="thread-msg-avatar">' + escapeHtml((latest.sender_display || latest.sender || "?").charAt(0).toUpperCase()) + "</span>";
+        html += '<div class="thread-msg-meta">';
+        html += '<span class="thread-msg-from">' + escapeHtml(latest.sender_display || latest.sender || "") + "</span>";
+        html += '<span class="thread-msg-date">' + escapeHtml(latest.date || "") + "</span>";
+        html += "</div></div>";
+        html += '<div class="thread-msg-body">' + escapeHtml(latest.content || "(İçerik yok)") + "</div>";
+        html += buildThreadAttachmentsHtml(latest);
+        html += "</article>";
+
+        if (older.length) {
+            html += '<div class="thread-older-label">';
+            html += '<span class="material-icons-outlined">forum</span>';
+            html += "Önceki mesajlar (" + older.length + ")";
+            html += "</div>";
+
+            older.forEach(function (msg) {
+                const snippet = (msg.content || "").replace(/\s+/g, " ").trim().slice(0, 120);
+                html += '<article class="thread-msg is-collapsed" data-mail-id="' + escapeHtml(msg.id) + '">';
+                html += '<button type="button" class="thread-msg-header" aria-expanded="false">';
+                html += '<span class="thread-msg-avatar">' + escapeHtml((msg.sender_display || msg.sender || "?").charAt(0).toUpperCase()) + "</span>";
+                html += '<div class="thread-msg-meta">';
+                html += '<span class="thread-msg-from">' + escapeHtml(msg.sender_display || msg.sender || "") + "</span>";
+                html += '<span class="thread-msg-date">' + escapeHtml(msg.date || "") + "</span>";
+                if (snippet) {
+                    html += '<span class="thread-msg-snippet">' + escapeHtml(snippet) + "</span>";
+                }
+                html += "</div>";
+                html += '<span class="material-icons-outlined thread-msg-toggle">expand_more</span>';
+                html += "</button>";
+                html += '<div class="thread-msg-body" hidden>' + escapeHtml(msg.content || "(İçerik yok)") + "</div>";
+                html += buildThreadAttachmentsHtml(msg);
+                html += "</article>";
+            });
+        }
+
+        readerThread.innerHTML = html;
+        readerThread.hidden = false;
+        if (readerBody) {
+            readerBody.hidden = true;
+            readerBody.textContent = "";
+        }
+        if (readerAttachments) {
+            readerAttachments.innerHTML = "";
+            readerAttachments.hidden = true;
+        }
+        return true;
+    }
+
+    function bindThreadToggleEvents() {
+        if (!readerThread) return;
+
+        readerThread.querySelectorAll(".thread-msg-header:not(.thread-msg-header-static)").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                const article = btn.closest(".thread-msg");
+                if (!article) return;
+
+                const expanded = article.classList.toggle("is-expanded");
+                article.classList.toggle("is-collapsed", !expanded);
+                btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+
+                const body = article.querySelector(".thread-msg-body");
+                if (body) body.hidden = !expanded;
+
+                const icon = btn.querySelector(".thread-msg-toggle");
+                if (icon) {
+                    icon.textContent = expanded ? "expand_less" : "expand_more";
+                }
+            });
+        });
     }
 
     function hideDraftView() {
@@ -244,6 +375,11 @@
         if (readerContent) readerContent.hidden = true;
         if (readerEmpty) readerEmpty.hidden = false;
         if (aiPanel) aiPanel.hidden = true;
+        if (readerThread) {
+            readerThread.hidden = true;
+            readerThread.innerHTML = "";
+        }
+        if (readerBody) readerBody.hidden = false;
     }
 
     function openMail(mail) {
@@ -257,6 +393,9 @@
         if (row) row.classList.add("selected");
 
         markAsRead(mail.id);
+        (mail.thread_ids || []).forEach(function (id) {
+            markAsRead(id);
+        });
 
         if (isDraftMail(mail)) {
             showDraftView();
@@ -272,23 +411,37 @@
             readerContent.hidden = false;
 
             if (readerSubject) readerSubject.textContent = mail.subject || "Konu yok";
-            if (readerFrom) readerFrom.textContent = mail.sender_display || mail.sender || "";
-            if (readerDate) readerDate.textContent = mail.date || "";
             if (readerAvatar) {
                 readerAvatar.textContent = (mail.sender_display || "?").charAt(0).toUpperCase();
             }
-            if (readerBody) {
-                resetTranslationState(mail.content || "");
+
+            const isThread = renderThreadView(mail);
+            if (!isThread) {
+                if (readerBody) {
+                    resetTranslationState(mail.content || "");
+                } else {
+                    currentOriginalContent = mail.content || "";
+                }
+                renderAttachments(mail);
             } else {
-                currentOriginalContent = mail.content || "";
+                const latest = (mail.thread_messages || [])[0] || mail;
+                resetTranslationState(latest.content || "");
+                bindThreadToggleEvents();
             }
-            renderAttachments(mail);
 
             if (aiMailId) aiMailId.value = mail.id || "";
             if (aiSender) aiSender.value = mail.sender || "";
             if (aiSubject) aiSubject.value = mail.subject || "";
             if (aiContent) aiContent.value = currentOriginalContent;
             if (aiPanel) aiPanel.hidden = false;
+
+            if (readerFrom && mail.thread_count > 1) {
+                readerFrom.textContent = (mail.sender_display || mail.sender || "") +
+                    " · " + mail.thread_count + " mesaj";
+            } else if (readerFrom) {
+                readerFrom.textContent = mail.sender_display || mail.sender || "";
+            }
+            if (readerDate) readerDate.textContent = mail.date || "";
         }
     }
 

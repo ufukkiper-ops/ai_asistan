@@ -251,5 +251,5 @@ def mail_page():
         mail_settings=mail_settings,
         sensitivity_presets=SENSITIVITY_PRESETS,
         mail_contacts=mail_contacts,
-        ui_version="gmail-v30",
+        ui_version="gmail-v34",
     )

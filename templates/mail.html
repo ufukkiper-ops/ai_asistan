@@ -273,6 +273,7 @@
                     </div>
 
                     <div class="reader-scroll-body">
+                        <div class="reader-thread" id="reader-thread" hidden></div>
                         <div class="reader-body" id="reader-body"></div>
                         <div class="reader-attachments" id="reader-attachments" hidden></div>
 
@@ -331,8 +332,6 @@
         </main>
 
     </div>
-
-</div>
 
 <!-- Yaz Modal -->
 <div class="compose-overlay" id="compose-overlay" hidden>
@@ -494,9 +493,9 @@
             </div>
             </div>
 
-            <div class="mail-dialog-footer">
-                <button type="button" class="dialog-btn dialog-btn-secondary" id="settings-cancel">İptal</button>
-                <button type="submit" class="dialog-btn dialog-btn-primary">Ayarları Kaydet</button>
+            <div class="mail-dialog-footer account-dialog-footer">
+                <button type="button" class="dialog-btn dialog-btn-secondary" id="settings-cancel">Vazgeç</button>
+                <input type="submit" class="dialog-btn dialog-btn-primary account-submit-btn" value="Ayarları Kaydet">
             </div>
         </form>
     </div>
@@ -570,18 +569,20 @@
             </div>
             </div>
 
-            <div class="mail-dialog-footer">
-                <button type="button" class="dialog-btn dialog-btn-secondary" id="account-cancel">İptal</button>
-                <button type="submit" class="dialog-btn dialog-btn-primary">Hesabı Ekle</button>
+            <div class="mail-dialog-footer account-dialog-footer">
+                <button type="button" class="dialog-btn dialog-btn-secondary" id="account-cancel">Vazgeç</button>
+                <input type="submit" class="dialog-btn dialog-btn-primary account-submit-btn" value="Hesabı Ekle">
             </div>
         </form>
     </div>
 </div>
 
+</div>
+
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=32"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=35"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
 {% endblock %}

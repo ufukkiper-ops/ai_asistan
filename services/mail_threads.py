@@ -48,11 +48,6 @@ def group_mails_by_thread(mailler):
         messages = groups[key]["messages"]
         primary = messages[0]
         thread_ids = [m["id"] for m in messages]
-        combined_content = "\n\n".join(
-            f"--- {m.get('date', '')} | {m.get('sender_display', m.get('sender', ''))} ---\n{m.get('content', '')}"
-            for m in messages
-            if m.get("content")
-        )
 
         grouped.append({
             **primary,
@@ -60,7 +55,6 @@ def group_mails_by_thread(mailler):
             "thread_ids": thread_ids,
             "thread_count": len(messages),
             "thread_messages": messages,
-            "content": combined_content or primary.get("content", ""),
         })
 
     return grouped
