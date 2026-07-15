@@ -1,6 +1,8 @@
 import os
 
 from mail import (
+    _fetch_mail_by_uid,
+    connect_mail,
     fetch_attachment,
     get_archive,
     get_drafts,
@@ -11,6 +13,7 @@ from mail import (
     get_folder_mails,
     move_mail_to_folder,
     move_mails_to_folder,
+    parse_message,
     recover_all_to_inbox,
     list_folder_uids,
     FOLDER_CANDIDATES,
@@ -52,17 +55,17 @@ FOLDER_IMAP = {
 }
 
 
-def load_folder_mails(folder, mail_config, count=20, settings=None):
+def load_folder_mails(folder, mail_config, count=20, settings=None, filter_spam=True):
     meta = {}
     settings = settings or {}
 
     if folder == "inbox":
-        fetch_count = settings.get("inbox_fetch_count", count)
+        fetch_count = min(count, settings.get("inbox_fetch_count", count))
         mailler, spam_moved = get_inbox(
             mail_config,
             fetch_count,
-            filter_spam=True,
-            settings=settings,
+            filter_spam=filter_spam,
+            settings={**settings, "inbox_fetch_count": fetch_count},
         )
         if spam_moved:
             meta["spam_moved"] = spam_moved
@@ -85,6 +88,31 @@ def load_folder_mails(folder, mail_config, count=20, settings=None):
         result = group_mails_by_thread(result)
 
     return result, meta
+
+
+def load_single_mail(folder, mail_config, mail_id):
+    imap_folder = get_imap_folder_name(folder, mail_config)
+    mail_conn = connect_mail(mail_config, imap_folder)
+    try:
+        thread_id, raw = _fetch_mail_by_uid(mail_conn, mail_id, mail_config)
+        if not raw:
+            return None
+
+        parsed = parse_message(raw, thread_id=thread_id)
+        parsed["id"] = str(mail_id)
+        return parsed
+    finally:
+        try:
+            mail_conn.logout()
+        except Exception:
+            pass
+
+
+def mail_content_preview(content, limit=400):
+    text = (content or "").replace("\r", "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "…"
 
 
 def filter_mails(mailler, search):
@@ -145,6 +173,59 @@ def _move_mails_to_inbox(form, mail_config, source_folder_key):
     return moved, errors
 
 
+def generate_ai_mail_reply(
+    sender,
+    subject,
+    content,
+    user_instruction="",
+    current_draft="",
+    revize_notu="",
+):
+    client = get_client()
+    if client is None:
+        raise RuntimeError("Sunucuda OPENAI_API_KEY ayarlı değil.")
+
+    if revize_notu:
+        prompt = f"""KULLANICI İPUCU / TALİMAT (ÖNCELİKLİ):
+{revize_notu}
+
+Bu ipucu doğrultusunda aşağıdaki taslağı güncelle. İpucundaki istekler mutlaka uygulansın.
+
+Gelen Mail:
+Kimden: {sender}
+Konu: {subject}
+İçerik:
+{content}
+
+Mevcut Taslak (kullanıcı elle düzenlemiş olabilir):
+{current_draft}
+
+Güncellenmiş taslağı yaz. Sadece gönderilecek yanıt metnini döndür."""
+    elif user_instruction:
+        prompt = f"""KULLANICI İPUCU / TALİMAT (ÖNCELİKLİ):
+{user_instruction}
+
+Bu ipucu doğrultusunda aşağıdaki maile yanıt yaz. İpucundaki ton, uzunluk, içerik ve istekler mutlaka yansısın.
+
+Gelen Mail:
+Kimden: {sender}
+Konu: {subject}
+İçerik:
+{content}
+
+Sadece gönderilecek yanıt metnini yaz."""
+    else:
+        prompt = f"""Gelen Mail:
+Kimden: {sender}
+Konu: {subject}
+İçerik:
+{content}
+
+Bu maile profesyonel, kibar ve çözüm odaklı bir Türkçe yanıt yaz. Sadece gönderilecek yanıt metnini yaz."""
+
+    return ask_gpt_mail_reply(prompt)
+
+
 def handle_mail_action(form, mail_config, files=None, user=None):
     islem = form.get("islem")
     sender = form.get("sender", "")
@@ -161,72 +242,39 @@ def handle_mail_action(form, mail_config, files=None, user=None):
     secilen_mail = {}
 
     if islem == "olustur":
-        client = get_client()
-        if client is None:
-            error = "Sunucuda OPENAI_API_KEY ayarlı değil."
-        else:
-            try:
-                if user_instruction:
-                    prompt = f"""KULLANICI İPUCU / TALİMAT (ÖNCELİKLİ):
-{user_instruction}
-
-Bu ipucu doğrultusunda aşağıdaki maile yanıt yaz. İpucundaki ton, uzunluk, içerik ve istekler mutlaka yansısın.
-
-Gelen Mail:
-Kimden: {sender}
-Konu: {subject}
-İçerik:
-{content}
-
-Sadece gönderilecek yanıt metnini yaz."""
-                else:
-                    prompt = f"""Gelen Mail:
-Kimden: {sender}
-Konu: {subject}
-İçerik:
-{content}
-
-Bu maile profesyonel, kibar ve çözüm odaklı bir Türkçe yanıt yaz. Sadece gönderilecek yanıt metnini yaz."""
-                ai_yaniti = ask_gpt_mail_reply(prompt)
-                secilen_mail = {
-                    "id": mail_id,
-                    "sender": sender,
-                    "subject": subject,
-                    "content": content,
-                }
-            except Exception as e:
-                error = f"Yanıt oluşturulurken hata: {str(e)}"
+        try:
+            ai_yaniti = generate_ai_mail_reply(
+                sender,
+                subject,
+                content,
+                user_instruction=user_instruction,
+            )
+            secilen_mail = {
+                "id": mail_id,
+                "sender": sender,
+                "subject": subject,
+                "content": content,
+            }
+        except Exception as e:
+            error = f"Yanıt oluşturulurken hata: {str(e)}"
 
     elif islem == "revize_et":
-        client = get_client()
-        if client is None:
-            error = "Sunucuda OPENAI_API_KEY ayarlı değil."
-        else:
-            try:
-                prompt = f"""KULLANICI İPUCU / TALİMAT (ÖNCELİKLİ):
-{revize_notu}
-
-Bu ipucu doğrultusunda aşağıdaki taslağı güncelle. İpucundaki istekler mutlaka uygulansın.
-
-Gelen Mail:
-Kimden: {sender}
-Konu: {subject}
-İçerik:
-{content}
-
-Mevcut Taslak (kullanıcı elle düzenlemiş olabilir):
-{current_draft}
-
-Güncellenmiş taslağı yaz. Sadece gönderilecek yanıt metnini döndür."""
-                ai_yaniti = ask_gpt_mail_reply(prompt)
-                secilen_mail = {
-                    "id": mail_id,
-                    "sender": sender,
-                    "subject": subject,
-                    "content": content,
-                }
-            except Exception as e:
-                error = f"Taslak yeniden düzenlenirken hata: {str(e)}"
+        try:
+            ai_yaniti = generate_ai_mail_reply(
+                sender,
+                subject,
+                content,
+                current_draft=current_draft,
+                revize_notu=revize_notu,
+            )
+            secilen_mail = {
+                "id": mail_id,
+                "sender": sender,
+                "subject": subject,
+                "content": content,
+            }
+        except Exception as e:
+            error = f"Taslak yeniden düzenlenirken hata: {str(e)}"
 
     elif islem == "spam":
         mail_id = form.get("mail_id", "").strip()

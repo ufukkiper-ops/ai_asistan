@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +34,9 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -67,6 +73,9 @@ import com.kipgpt.app.data.SendRequest
 import com.kipgpt.app.data.SpeechHelper
 import kotlinx.coroutines.launch
 
+private val ChatInputButtonSize = 40.dp
+private val ChatInputIconSize = 20.dp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -87,6 +96,7 @@ fun ChatScreen(
     val context = LocalContext.current
     val speechHelper = remember { SpeechHelper(context) }
     val listening = remember { mutableStateOf(false) }
+    val pendingVoiceStart = remember { mutableStateOf(false) }
 
     DisposableEffect(speechHelper) {
         onDispose { speechHelper.shutdown() }
@@ -95,24 +105,34 @@ fun ChatScreen(
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (!granted) {
+        if (granted) {
+            if (pendingVoiceStart.value) {
+                pendingVoiceStart.value = false
+                startVoiceInput(skipPermissionCheck = true)
+            }
+        } else {
+            pendingVoiceStart.value = false
             scope.launch { snackbar.showSnackbar("Mikrofon izni gerekli") }
         }
     }
 
-    fun startVoiceInput() {
+    fun startVoiceInput(skipPermissionCheck: Boolean = false) {
         if (!speechHelper.isListenAvailable()) {
-            scope.launch { snackbar.showSnackbar("Cihaz sesli girişi desteklemiyor") }
+            scope.launch {
+                snackbar.showSnackbar("Ses tanıma yok. Google uygulamasını güncelleyin.")
+            }
             return
         }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+        if (!skipPermissionCheck &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            pendingVoiceStart.value = true
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
         listening.value = true
-        speechHelper.startListening(
+        val started = speechHelper.startListening(
             onResult = { transcript ->
                 input.value = if (input.value.isBlank()) transcript else "${input.value} $transcript"
             },
@@ -121,6 +141,9 @@ fun ChatScreen(
             },
             onEnd = { listening.value = false },
         )
+        if (!started) {
+            listening.value = false
+        }
     }
 
     fun loadChats(selectId: String? = null) {
@@ -344,30 +367,9 @@ fun ChatScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Bottom,
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (listening.value) {
-                                speechHelper.stopListening()
-                                listening.value = false
-                            } else {
-                                startVoiceInput()
-                            }
-                        },
-                        enabled = !sending.value,
-                    ) {
-                        Icon(
-                            if (listening.value) Icons.Default.Stop else Icons.Default.Mic,
-                            contentDescription = "Sesle konuş",
-                            tint = if (listening.value) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
-                        )
-                    }
                     OutlinedTextField(
                         value = input.value,
                         onValueChange = { input.value = it },
@@ -376,34 +378,74 @@ fun ChatScreen(
                         enabled = !sending.value,
                         maxLines = 4,
                     )
-                    Spacer(Modifier.padding(4.dp))
-                    IconButton(
-                        onClick = {
-                            val text = input.value.trim()
-                            if (text.isBlank() || activeChatId.value.isBlank()) return@IconButton
-                            scope.launch {
-                                sending.value = true
-                                messages.add(ChatMessage("user", text))
-                                input.value = ""
-                                try {
-                                    val response = apiClient.api.sendMessage(
-                                        activeChatId.value,
-                                        SendRequest(text),
-                                    )
-                                    messages.add(ChatMessage("assistant", response.answer))
-                                    chatTitle.value = response.chat_title
-                                    loadChats(activeChatId.value)
-                                } catch (e: Exception) {
-                                    messages.removeLastOrNull()
-                                    snackbar.showSnackbar("Gönderilemedi: ${e.message}")
-                                } finally {
-                                    sending.value = false
-                                }
-                            }
-                        },
-                        enabled = !sending.value && input.value.isNotBlank(),
+                    Spacer(Modifier.width(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
+                        FilledTonalIconButton(
+                            onClick = {
+                                if (listening.value) {
+                                    speechHelper.stopListening()
+                                    listening.value = false
+                                } else {
+                                    startVoiceInput()
+                                }
+                            },
+                            enabled = !sending.value,
+                            modifier = Modifier.size(ChatInputButtonSize),
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (listening.value) {
+                                    MaterialTheme.colorScheme.errorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                            ),
+                        ) {
+                            Icon(
+                                if (listening.value) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = "Sesle konuş",
+                                modifier = Modifier.size(ChatInputIconSize),
+                                tint = if (listening.value) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                            )
+                        }
+                        FilledIconButton(
+                            onClick = {
+                                val text = input.value.trim()
+                                if (text.isBlank() || activeChatId.value.isBlank()) return@FilledIconButton
+                                scope.launch {
+                                    sending.value = true
+                                    messages.add(ChatMessage("user", text))
+                                    input.value = ""
+                                    try {
+                                        val response = apiClient.api.sendMessage(
+                                            activeChatId.value,
+                                            SendRequest(text),
+                                        )
+                                        messages.add(ChatMessage("assistant", response.answer))
+                                        chatTitle.value = response.chat_title
+                                        loadChats(activeChatId.value)
+                                    } catch (e: Exception) {
+                                        messages.removeLastOrNull()
+                                        snackbar.showSnackbar("Gönderilemedi: ${e.message}")
+                                    } finally {
+                                        sending.value = false
+                                    }
+                                }
+                            },
+                            enabled = !sending.value && input.value.isNotBlank(),
+                            modifier = Modifier.size(ChatInputButtonSize),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Gönder",
+                                modifier = Modifier.size(ChatInputIconSize),
+                            )
+                        }
                     }
                 }
             }
@@ -422,8 +464,9 @@ private fun MessageBubble(message: ChatMessage, speechHelper: SpeechHelper) {
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = align,
     ) {
-        Column(
-            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
         ) {
             if (!isUser && speechHelper.isSpeakAvailable()) {
                 IconButton(
@@ -434,7 +477,7 @@ private fun MessageBubble(message: ChatMessage, speechHelper: SpeechHelper) {
                             speechHelper.speak(message.content)
                         }
                     },
-                    modifier = Modifier.height(32.dp),
+                    modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
                         if (speechHelper.isSpeaking()) Icons.Default.Stop else Icons.Default.VolumeUp,

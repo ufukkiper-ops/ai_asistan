@@ -8,32 +8,31 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kipgpt.app.data.ApiClient
 import com.kipgpt.app.data.SessionManager
 import com.kipgpt.app.ui.LoginScreen
 import com.kipgpt.app.ui.MainScreen
 import com.kipgpt.app.ui.SettingsScreen
 import com.kipgpt.app.ui.theme.KipGptTheme
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val sessionManager = SessionManager(applicationContext)
+        val app = application as KipGptApplication
 
         setContent {
             KipGptTheme {
-                KipGptApp(sessionManager)
+                KipGptApp(app.sessionManager)
             }
         }
     }
@@ -41,61 +40,49 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun KipGptApp(sessionManager: SessionManager) {
-    val navController = rememberNavController()
-    val startRoute = remember { mutableStateOf<String?>(null) }
-    val tokenState = remember { mutableStateOf<String?>(null) }
-    val baseUrlState = remember { mutableStateOf(SessionManager.DEFAULT_BASE_URL) }
+    val viewModel: MainViewModel = viewModel(
+        factory = MainViewModel.Factory(sessionManager),
+    )
+    val authState by viewModel.authState.collectAsState()
+    val baseUrl by viewModel.baseUrl.collectAsState()
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        tokenState.value = sessionManager.tokenFlow.first()
-        baseUrlState.value = sessionManager.baseUrlFlow.first()
-        startRoute.value = if (tokenState.value.isNullOrBlank()) "login" else "main"
+    val token = (authState as? AuthState.LoggedIn)?.token
+    val apiClient = remember(token, baseUrl) {
+        ApiClient(token, baseUrl)
     }
 
-    val apiClient = remember(tokenState.value, baseUrlState.value) {
-        ApiClient(tokenState.value, baseUrlState.value)
-    }
-
-    val route = startRoute.value
-    if (route == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+    when {
+        authState is AuthState.Loading -> {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
         }
-        return
-    }
-
-    NavHost(navController = navController, startDestination = route) {
-        composable("login") {
+        viewModel.showGuestSettings -> {
+            SettingsScreen(
+                apiClient = apiClient,
+                sessionManager = sessionManager,
+                onBack = { viewModel.closeGuestSettings() },
+                onLogout = null,
+            )
+        }
+        authState is AuthState.LoggedOut -> {
             LoginScreen(
                 apiClient = apiClient,
                 sessionManager = sessionManager,
-                onLoggedIn = {
-                    tokenState.value = sessionManager.tokenFlow.first()
-                    navController.navigate("main") {
-                        popUpTo("login") { inclusive = true }
-                    }
-                },
-                onOpenSettings = { navController.navigate("settings_guest") },
+                onLoggedIn = { },
+                onOpenSettings = { viewModel.openGuestSettings() },
             )
         }
-        composable("main") {
+        authState is AuthState.LoggedIn -> {
             MainScreen(
                 apiClient = apiClient,
                 sessionManager = sessionManager,
                 onLogout = {
-                    tokenState.value = null
-                    navController.navigate("login") {
-                        popUpTo("main") { inclusive = true }
+                    scope.launch {
+                        viewModel.logout()
                     }
                 },
-            )
-        }
-        composable("settings_guest") {
-            SettingsScreen(
-                apiClient = apiClient,
-                sessionManager = sessionManager,
-                onBack = { navController.popBackStack() },
-                onLogout = null,
             )
         }
     }

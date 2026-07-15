@@ -664,7 +664,7 @@ def get_first_available_folder(config, folder_names, count=20):
 def get_inbox(config, count=20, filter_spam=True, settings=None):
     settings = settings or {}
     display_count = settings.get("inbox_fetch_count", count)
-    sweep_count = max(display_count, 50)
+    sweep_count = max(display_count, 50) if filter_spam else display_count
 
     mailler = get_folder_mails(config, "INBOX", sweep_count)
     if not filter_spam:

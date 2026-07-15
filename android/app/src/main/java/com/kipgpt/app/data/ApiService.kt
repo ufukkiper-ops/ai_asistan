@@ -53,6 +53,12 @@ interface KipGptApi {
         @Query("search") search: String? = null,
     ): MailListResponse
 
+    @GET("mail/detail")
+    suspend fun mailDetail(
+        @Query("mail_id") mailId: String,
+        @Query("folder") folder: String,
+    ): MailItem
+
     @GET("mail/attachment")
     @Streaming
     suspend fun downloadAttachment(
@@ -63,6 +69,12 @@ interface KipGptApi {
 
     @POST("mail/translate")
     suspend fun translate(@Body body: TranslateRequest): TranslateResponse
+
+    @POST("mail/ai-reply")
+    suspend fun generateMailAiReply(@Body body: MailAiReplyRequest): MailAiReplyResponse
+
+    @POST("mail/send-reply")
+    suspend fun sendMailReply(@Body body: MailSendReplyRequest): MailSendReplyResponse
 }
 
 class ApiClient(private var token: String?, baseUrl: String) {

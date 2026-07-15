@@ -1,5 +1,6 @@
 package com.kipgpt.app.ui
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -12,7 +13,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import com.kipgpt.app.data.ApiClient
 import com.kipgpt.app.data.SessionManager
@@ -23,7 +24,7 @@ fun MainScreen(
     sessionManager: SessionManager,
     onLogout: () -> Unit,
 ) {
-    val selectedTab = remember { mutableIntStateOf(0) }
+    val selectedTab = rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
         bottomBar = {
@@ -52,17 +53,17 @@ fun MainScreen(
         when (selectedTab.intValue) {
             0 -> ChatScreen(
                 apiClient = apiClient,
-                modifier = Modifier.padding(padding),
+                modifier = Modifier.fillMaxSize().padding(padding),
             )
             1 -> MailScreen(
                 apiClient = apiClient,
-                modifier = Modifier.padding(padding),
+                modifier = Modifier.fillMaxSize().padding(padding),
             )
             else -> SettingsScreen(
                 apiClient = apiClient,
                 sessionManager = sessionManager,
                 onLogout = onLogout,
-                modifier = Modifier.padding(padding),
+                modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
     }

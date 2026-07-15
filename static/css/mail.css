@@ -1196,7 +1196,22 @@ body.dialog-open .account-remove-form {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-bottom: 24px;
+    padding-bottom: 8px;
+}
+
+.reader-footer {
+    flex-shrink: 0;
+    background: var(--gmail-surface);
+    border-top: 1px solid var(--gmail-border);
+}
+
+.reader-actions {
+    display: flex;
+    gap: 8px;
+    padding: 16px 24px;
+    flex-shrink: 0;
+    background: var(--gmail-surface);
+    flex-wrap: wrap;
 }
 
 .reader-empty[hidden],
@@ -1571,15 +1586,6 @@ body.dialog-open .account-remove-form {
 
 .thread-msg.is-collapsed .thread-msg-attachments {
     display: none;
-}
-
-.reader-actions {
-    display: flex;
-    gap: 8px;
-    padding: 16px 24px;
-    border-top: 1px solid var(--gmail-border);
-    flex-shrink: 0;
-    background: var(--gmail-surface);
 }
 
 .reader-attachments {
@@ -2390,6 +2396,17 @@ body.dialog-open .account-remove-form {
     .gmail-main {
         margin-right: 8px;
         margin-bottom: 8px;
+    }
+
+    .reader-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .reader-actions {
+        padding: 12px 16px;
     }
 }
 

@@ -274,6 +274,10 @@ button{
     background:#f9fafb;
 }
 
+.file-preview-bar[hidden]{
+    display:none !important;
+}
+
 .file-preview-clear{
     border:none;
     background:#e5e7eb;

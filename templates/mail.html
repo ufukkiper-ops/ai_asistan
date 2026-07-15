@@ -282,7 +282,9 @@
                         <div class="reader-thread" id="reader-thread" hidden></div>
                         <div class="reader-body" id="reader-body"></div>
                         <div class="reader-attachments" id="reader-attachments" hidden></div>
+                    </div>
 
+                    <div class="reader-footer">
                         <div class="reader-actions">
                             <button class="action-btn action-btn-restore" type="button" id="unspam-action-btn" hidden>
                                 <span class="material-icons-outlined">move_to_inbox</span>
@@ -363,8 +365,7 @@
                                         id="ai-user-instruction"
                                         name="user_instruction"
                                         placeholder="Yanıtın nasıl olmasını istiyorsunuz? Örn: Daha kısa yaz, resmi dil kullan, fiyat teklifini ekle..."
-                                        rows="4"
-                                        required></textarea>
+                                        rows="4"></textarea>
                                     <button type="button" class="speech-mic-btn speech-field-mic" id="ai-instruction-mic" title="Sesle yaz">
                                         <span class="material-icons-outlined">mic</span>
                                     </button>
@@ -646,7 +647,7 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=43"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=44"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
 {% endblock %}

@@ -4,8 +4,9 @@ from io import BytesIO
 from services.api_auth import create_api_token, require_api_user
 from services.mail_accounts import list_accounts_for_ui, resolve_active_mail_config
 from services.mail_settings import get_mail_settings
-from services.mail_ui import FOLDERS, download_mail_attachment, filter_mails, load_folder_mails
+from services.mail_ui import FOLDERS, download_mail_attachment, filter_mails, generate_ai_mail_reply, load_folder_mails, load_single_mail, mail_content_preview
 from services.translate_service import translate_mail_content
+from mail import send_reply_mail
 from services.chat_service import generate_chat_response, generate_chat_title, get_client
 from storage import load_data, save_data
 from users import (
@@ -46,7 +47,7 @@ def _serialize_message(message):
     return item
 
 
-def _serialize_mail(mail):
+def _serialize_mail(mail, for_list=False):
     attachments = []
     for att in mail.get("attachments") or []:
         attachments.append({
@@ -57,13 +58,17 @@ def _serialize_mail(mail):
             "is_image": bool(att.get("is_image")),
         })
 
+    content = mail.get("content", "")
+    if for_list:
+        content = mail_content_preview(content)
+
     return {
         "id": mail.get("id", ""),
         "subject": mail.get("subject", ""),
         "sender": mail.get("sender", ""),
         "sender_display": mail.get("sender_display", ""),
         "date": mail.get("date", ""),
-        "content": mail.get("content", ""),
+        "content": content,
         "attachments": attachments,
         "thread_count": mail.get("thread_count", 1),
         "starred": bool(mail.get("starred")),
@@ -302,10 +307,16 @@ def api_mail_list(user_id):
 
     folder = (request.args.get("folder") or "inbox").strip()
     search = (request.args.get("search") or "").strip()
-    count = settings.get("inbox_fetch_count", 100)
+    mobile_count = 35
 
     try:
-        mailler, meta = load_folder_mails(folder, mail_config, count=count, settings=settings)
+        mailler, meta = load_folder_mails(
+            folder,
+            mail_config,
+            count=mobile_count,
+            settings=settings,
+            filter_spam=False,
+        )
         mailler = filter_mails(mailler, search)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -313,9 +324,36 @@ def api_mail_list(user_id):
     return jsonify({
         "folder": folder,
         "account": active_account.get("email") if active_account else "",
-        "mails": [_serialize_mail(m) for m in mailler],
+        "mails": [_serialize_mail(m, for_list=True) for m in mailler],
         "meta": meta,
     })
+
+
+@mobile_api_bp.route("/mail/detail", methods=["GET"])
+@require_api_user
+def api_mail_detail(user_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+    mail_config, active_account, _settings = _mail_context(user)
+    if not mail_config:
+        return jsonify({"error": "Mail hesabı bağlı değil."}), 400
+
+    mail_id = (request.args.get("mail_id") or "").strip()
+    folder = (request.args.get("folder") or "inbox").strip()
+    if not mail_id:
+        return jsonify({"error": "mail_id gerekli."}), 400
+
+    try:
+        mail = load_single_mail(folder, mail_config, mail_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if not mail:
+        return jsonify({"error": "Mail bulunamadı."}), 404
+
+    return jsonify(_serialize_mail(mail))
 
 
 @mobile_api_bp.route("/mail/attachment", methods=["GET"])
@@ -368,3 +406,107 @@ def api_mail_translate(user_id):
         return jsonify({"translated": translated, "target_lang": target_lang})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@mobile_api_bp.route("/mail/ai-reply", methods=["POST"])
+@require_api_user
+def api_mail_ai_reply(user_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+    mail_config, _active_account, _settings = _mail_context(user)
+    if not mail_config:
+        return jsonify({"error": "Mail hesabı bağlı değil."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    mail_id = (payload.get("mail_id") or "").strip()
+    folder = (payload.get("folder") or "inbox").strip()
+    sender = (payload.get("sender") or "").strip()
+    subject = (payload.get("subject") or "").strip()
+    content = (payload.get("content") or "").strip()
+    user_instruction = (payload.get("user_instruction") or "").strip()
+    current_draft = (payload.get("current_draft") or "").strip()
+    revize_notu = (payload.get("revize_notu") or "").strip()
+
+    if not sender:
+        return jsonify({"error": "Gönderen bilgisi gerekli."}), 400
+
+    if not content and mail_id:
+        try:
+            mail = load_single_mail(folder, mail_config, mail_id)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        if not mail:
+            return jsonify({"error": "Mail bulunamadı."}), 404
+        sender = sender or mail.get("sender", "")
+        subject = subject or mail.get("subject", "")
+        content = mail.get("content", "")
+
+    if not content:
+        return jsonify({"error": "Mail içeriği bulunamadı."}), 400
+
+    try:
+        draft = generate_ai_mail_reply(
+            sender,
+            subject,
+            content,
+            user_instruction=user_instruction,
+            current_draft=current_draft,
+            revize_notu=revize_notu,
+        )
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Yanıt oluşturulurken hata: {str(e)}"}), 500
+
+    return jsonify({
+        "draft": draft,
+        "mail": {
+            "id": mail_id,
+            "sender": sender,
+            "subject": subject,
+            "content": content,
+        },
+    })
+
+
+@mobile_api_bp.route("/mail/send-reply", methods=["POST"])
+@require_api_user
+def api_mail_send_reply(user_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+    mail_config, _active_account, _settings = _mail_context(user)
+    if not mail_config:
+        return jsonify({"error": "Mail hesabı bağlı değil."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    sender = (payload.get("sender") or "").strip()
+    subject = (payload.get("subject") or "").strip()
+    final_reply = (payload.get("final_reply") or "").strip()
+    cc_email = (payload.get("cc_email") or "").strip()
+    bcc_email = (payload.get("bcc_email") or "").strip()
+
+    if not sender:
+        return jsonify({"error": "Alıcı gerekli."}), 400
+    if not final_reply:
+        return jsonify({"error": "Yanıt metni boş."}), 400
+
+    try:
+        send_reply_mail(
+            mail_config,
+            to_email=sender,
+            subject=f"Re: {subject}" if subject else "Re:",
+            body=final_reply,
+            cc=cc_email,
+            bcc=bcc_email,
+        )
+    except Exception as e:
+        return jsonify({"error": f"E-posta gönderilirken hata: {str(e)}"}), 500
+
+    return jsonify({
+        "success": True,
+        "message": f"{sender} adresine yanıt gönderildi.",
+    })

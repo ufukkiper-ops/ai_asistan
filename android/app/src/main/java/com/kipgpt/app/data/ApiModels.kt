@@ -81,4 +81,33 @@ data class TranslateRequest(val text: String, val target_lang: String)
 
 data class TranslateResponse(val translated: String, val target_lang: String)
 
+data class MailAiReplyRequest(
+    val mail_id: String = "",
+    val folder: String = "inbox",
+    val sender: String = "",
+    val subject: String = "",
+    val content: String = "",
+    val user_instruction: String = "",
+    val current_draft: String = "",
+    val revize_notu: String = "",
+)
+
+data class MailAiReplyResponse(
+    val draft: String,
+    val mail: MailItem,
+)
+
+data class MailSendReplyRequest(
+    val sender: String,
+    val subject: String,
+    val final_reply: String,
+    val cc_email: String = "",
+    val bcc_email: String = "",
+)
+
+data class MailSendReplyResponse(
+    val success: Boolean,
+    val message: String,
+)
+
 data class ApiError(val error: String)

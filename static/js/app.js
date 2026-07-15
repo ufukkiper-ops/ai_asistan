@@ -222,6 +222,8 @@ function bindChatPage() {
     const fileUploadBtn = document.getElementById("file-upload-btn");
     const clearBtn = document.getElementById("file-preview-clear");
 
+    clearSelectedFilePreview();
+
     if (!chatForm) return;
 
     if (chatSearch && chatList) {
