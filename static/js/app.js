@@ -8,6 +8,30 @@ const FILE_ICONS = {
 };
 
 let selectedChatFile = null;
+const MAX_CHAT_FILE_BYTES = 15 * 1024 * 1024;
+
+function validateChatFile(file) {
+    if (!file) return null;
+    if (file.size > MAX_CHAT_FILE_BYTES) {
+        return "Dosya boyutu 15 MB sınırını aşıyor.";
+    }
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const allowed = ["pdf", "jpg", "jpeg", "png", "gif", "webp", "bmp", "doc", "docx", "xls", "xlsx", "csv", "txt", "md", "log"];
+    if (!allowed.includes(ext)) {
+        return "Desteklenmeyen dosya türü. PDF, JPG, PNG, Word, Excel, CSV veya TXT gönderin.";
+    }
+    return null;
+}
+
+function showChatError(message) {
+    const messages = document.querySelector(".messages");
+    if (!messages) return;
+    const div = document.createElement("div");
+    div.className = "msg msg-bot";
+    div.innerHTML = "<b>Hata:</b><br>" + escapeHtml(message);
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+}
 
 function escapeHtml(text) {
     const div = document.createElement("div");
@@ -41,17 +65,25 @@ function renderFileBadge(fileMeta) {
 function getFileMetaFromFile(file) {
     const ext = (file.name.split(".").pop() || "").toLowerCase();
     let type = "other";
-    if (file.type.startsWith("image/")) type = "image";
-    else if (ext === "pdf") type = "pdf";
-    else if (ext === "doc" || ext === "docx") type = "word";
-    else if (ext === "xls" || ext === "xlsx" || ext === "csv") type = "excel";
-    else if (ext === "txt") type = "text";
+    if (file.type.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext)) {
+        type = "image";
+    } else if (ext === "pdf") {
+        type = "pdf";
+    } else if (ext === "doc" || ext === "docx") {
+        type = "word";
+    } else if (ext === "xls" || ext === "xlsx" || ext === "csv") {
+        type = "excel";
+    } else if (ext === "txt" || ext === "md" || ext === "log") {
+        type = "text";
+    }
 
     return {
         name: file.name,
         type: type,
         icon: FILE_ICONS[type] || FILE_ICONS.other,
-        preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+        preview: (file.type.startsWith("image/") || type === "image")
+            ? URL.createObjectURL(file)
+            : null,
     };
 }
 
@@ -210,12 +242,19 @@ function bindChatPage() {
 
     if (fileInput) {
         fileInput.addEventListener("change", function () {
-            if (fileInput.files.length > 0) {
-                selectedChatFile = fileInput.files[0];
-                showSelectedFilePreview(selectedChatFile);
-            } else {
+            if (!fileInput.files.length) {
                 clearSelectedFilePreview();
+                return;
             }
+            const file = fileInput.files[0];
+            const validationError = validateChatFile(file);
+            if (validationError) {
+                showChatError(validationError);
+                clearSelectedFilePreview();
+                return;
+            }
+            selectedChatFile = file;
+            showSelectedFilePreview(selectedChatFile);
         });
     }
 
@@ -253,6 +292,14 @@ async function sendTextMessage(event) {
 
     if (!message && !file) {
         return;
+    }
+
+    if (file) {
+        const validationError = validateChatFile(file);
+        if (validationError) {
+            showChatError(validationError);
+            return;
+        }
     }
 
     const messages = document.querySelector(".messages");
@@ -296,7 +343,7 @@ async function sendTextMessage(event) {
 
         if (data.status === "success") {
             loading.remove();
-            appendMessage("bot", data.answer, null);
+            appendMessage("bot", data.answer, data.file || null);
             if (data.chat_title) {
                 updateActiveChatTitle(data.chat_title);
             }

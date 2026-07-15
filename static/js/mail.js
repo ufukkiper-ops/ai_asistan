@@ -835,6 +835,12 @@
                 return;
             }
 
+            if (file.size > 15 * 1024 * 1024) {
+                window.alert("Dosya boyutu 15 MB sınırını aşıyor.");
+                clearAttachmentPreview(input, previewEl);
+                return;
+            }
+
             showAttachPreview(input.files[0], previewEl, input);
         });
     });

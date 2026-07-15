@@ -10,8 +10,8 @@ from openai import OpenAI
 from services.file_service import (
     build_file_meta,
     extract_file_text,
-    get_file_category,
     image_to_data_url,
+    validate_chat_upload,
 )
 
 
@@ -139,15 +139,17 @@ def generate_chat_title(soru):
 
 
 def analyze_uploaded_file(uploaded_file, prompt):
-    filename = uploaded_file.filename or "dosya"
+    filename, category, _data = validate_chat_upload(uploaded_file)
     mimetype = uploaded_file.mimetype or ""
-    category = get_file_category(filename, mimetype)
 
     if category == "image":
         preview = image_to_data_url(uploaded_file)
         client = get_client()
         if client is None:
             raise Exception("OPENAI_API_KEY bulunamadı.")
+
+        if not preview:
+            raise ValueError("Görsel çok büyük. Daha küçük bir JPG/PNG gönderin.")
 
         response = client.chat.completions.create(
             model=get_gpt_model(),

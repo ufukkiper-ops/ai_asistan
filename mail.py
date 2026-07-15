@@ -1,13 +1,17 @@
 import base64
 import email
 import imaplib
+import io
 import mimetypes
 import os
 import re
 import smtplib
 from datetime import datetime
 from email import encoders
+from email.mime.application import MIMEApplication
+from email.mime.audio import MIMEAudio
 from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
 
 from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
@@ -15,6 +19,7 @@ from email.mime.text import MIMEText
 from email.utils import parsedate_to_datetime
 
 from services.chat_service import get_client, get_gpt_model
+from services.file_service import guess_mimetype, pdf_bytes_to_text, safe_filename
 from services.mail_content import clean_mail_body, decode_payload, html_to_text, normalize_mail_body
 
 
@@ -104,12 +109,36 @@ def decode_mail_header(value):
 
 
 def _is_attachment_part(part):
+    ctype = (part.get_content_type() or "").lower()
     disposition = (part.get("Content-Disposition") or "").lower()
+
+    if ctype in ("text/plain", "text/html"):
+        return "attachment" in disposition
+
     if "attachment" in disposition:
         return True
+
+    if part.get_filename() and ctype.startswith("image/"):
+        return "inline" not in disposition
+
     if part.get_filename():
         return True
+
     return False
+
+
+def _extract_pdf_attachment_text(msg, max_chars=8000):
+    for filename, mime, payload in _iter_attachment_parts(msg):
+        lower_name = (filename or "").lower()
+        if mime != "application/pdf" and not lower_name.endswith(".pdf"):
+            continue
+        try:
+            text = pdf_bytes_to_text(payload)
+            if text:
+                return text[:max_chars]
+        except Exception:
+            continue
+    return ""
 
 
 def _extract_part_raw(part):
@@ -156,6 +185,12 @@ def extract_body(msg):
     plain_text = "\n\n".join(p for p in plain_parts if p.strip())
     html_raw = "\n\n".join(p for p in html_raw_parts if p.strip())
     body = normalize_mail_body(plain_text, html_raw)
+
+    if len(body.strip()) < 40:
+        pdf_text = _extract_pdf_attachment_text(msg)
+        if pdf_text:
+            body = pdf_text
+
     return clean_mail_body(body)
 
 
@@ -184,7 +219,7 @@ def extract_attachments(msg):
     for index, (filename, mime, payload) in enumerate(_iter_attachment_parts(msg)):
         is_image = mime.startswith("image/")
         preview = None
-        if is_image and len(payload) < 800000:
+        if is_image and len(payload) < 1_200_000:
             preview = f"data:{mime};base64,{base64.b64encode(payload).decode('ascii')}"
 
         attachments.append({
@@ -696,11 +731,28 @@ def _parse_recipient_list(value):
 
 def _attach_files(msg, attachments):
     for attachment in attachments or []:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(attachment["data"])
-        encoders.encode_base64(part)
-        filename = attachment.get("filename", "ek")
-        part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+        if not attachment or not attachment.get("data"):
+            continue
+
+        data = attachment["data"]
+        filename = safe_filename(attachment.get("filename", "ek"))
+        mimetype = guess_mimetype(filename, attachment.get("mimetype"))
+        maintype, _, subtype = mimetype.partition("/")
+        if not subtype:
+            maintype, subtype = "application", "octet-stream"
+
+        if maintype == "image":
+            part = MIMEImage(data, _subtype=subtype or "jpeg")
+        elif maintype == "audio":
+            part = MIMEAudio(data, _subtype=subtype or "octet-stream")
+        elif maintype == "application":
+            part = MIMEApplication(data, _subtype=subtype if subtype != "octet-stream" else None)
+        else:
+            part = MIMEBase(maintype, subtype or "octet-stream")
+            part.set_payload(data)
+            encoders.encode_base64(part)
+
+        part.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(part)
 
 
