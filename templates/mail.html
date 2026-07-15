@@ -683,7 +683,7 @@
 </div>
 
 <!-- Sohbet baloncuğu -->
-<button type="button" class="chat-bubble-fab" id="chat-bubble-fab" title="KipGPT Sohbet">
+<button type="button" class="chat-bubble-fab" id="chat-bubble-fab" title="KipGPT Sohbet — sürükleyerek taşıyabilirsiniz">
     <span class="material-icons-outlined">chat</span>
 </button>
 <div class="chat-bubble-panel" id="chat-bubble-panel" hidden>
@@ -713,7 +713,7 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=48"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=49"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
 {% endblock %}
