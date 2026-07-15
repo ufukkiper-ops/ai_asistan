@@ -1,5 +1,6 @@
 package com.kipgpt.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,7 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -46,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -218,67 +222,112 @@ fun MailScreen(
 
 @Composable
 private fun MailRow(mail: MailItem, onClick: () -> Unit) {
-    Column(
+    val senderName = formatSenderName(mail)
+    val senderEmail = formatSenderEmail(mail)
+    val senderInitial = senderName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .padding(top = 2.dp, end = 12.dp)
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center,
+        ) {
             Text(
-                mail.sender.ifBlank { mail.sender_display },
+                senderInitial,
+                color = Color.White,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
             )
-            if (mail.starred) {
-                Icon(
-                    Icons.Default.Star,
-                    contentDescription = "Yıldızlı",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-            }
-            if (mail.thread_count > 1) {
-                Text(
-                    "${mail.thread_count}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-            }
-            Text(mail.date, style = MaterialTheme.typography.bodySmall)
         }
-        Text(
-            mail.subject.ifBlank { "(Konu yok)" },
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            mail.content.replace("\n", " ").take(120),
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (mail.attachments.isNotEmpty()) {
+
+        Column(Modifier.weight(1f)) {
             Row(
-                modifier = Modifier.padding(top = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Default.AttachFile,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 4.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        senderName,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    if (senderEmail.isNotBlank() && senderEmail != senderName) {
+                        Text(
+                            senderEmail,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (mail.starred) {
+                    Icon(
+                        Icons.Default.Star,
+                        contentDescription = "Yıldızlı",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                }
+                Text(mail.date, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${mail.attachments.size} ek",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    mail.subject.ifBlank { "(Konu yok)" },
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
+                if (mail.thread_count > 1) {
+                    Text(
+                        "${mail.thread_count} mesaj",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+            }
+
+            Text(
+                mail.content.replace("\n", " ").take(120),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (mail.attachments.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.AttachFile,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 4.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "${mail.attachments.size} ek",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
     }
@@ -376,19 +425,59 @@ fun MailDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    mail.sender_display.ifBlank { mail.sender },
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
+            val senderName = formatSenderName(mail)
+            val senderEmail = formatSenderEmail(mail)
+            val senderInitial = senderName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+
+            Row(verticalAlignment = Alignment.Top) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        senderInitial,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        senderName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (senderEmail.isNotBlank()) {
+                        Text(
+                            senderEmail,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        mail.date,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
                 if (mail.starred) {
                     Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 } else {
                     Icon(Icons.Outlined.StarOutline, contentDescription = null)
                 }
             }
-            Text(mail.date, style = MaterialTheme.typography.bodySmall)
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                mail.subject.ifBlank { "(Konu yok)" },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
             Spacer(Modifier.height(8.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -449,4 +538,25 @@ private fun formatSize(bytes: Int): String {
     if (bytes < 1024) return "$bytes B"
     if (bytes < 1024 * 1024) return "${bytes / 1024} KB"
     return "${bytes / (1024 * 1024)} MB"
+}
+
+private fun formatSenderName(mail: MailItem): String {
+    val raw = mail.sender_display.ifBlank { mail.sender }.trim()
+    val nameMatch = Regex("^\"?([^\"<]+)\"?\\s*<").find(raw)
+    if (nameMatch != null) {
+        return nameMatch.groupValues[1].trim()
+    }
+    if (raw.contains("@") && !raw.contains(" ")) {
+        return raw.substringBefore("@")
+    }
+    return raw.ifBlank { "Bilinmeyen gönderen" }
+}
+
+private fun formatSenderEmail(mail: MailItem): String {
+    val raw = mail.sender_display.ifBlank { mail.sender }.trim()
+    val emailMatch = Regex("<([^>]+)>").find(raw)
+    if (emailMatch != null) {
+        return emailMatch.groupValues[1].trim()
+    }
+    return mail.sender.trim().takeIf { it.contains("@") } ?: raw.takeIf { it.contains("@") } ?: ""
 }
