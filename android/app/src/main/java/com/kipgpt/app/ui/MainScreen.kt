@@ -68,6 +68,7 @@ fun MainScreen(
         when (selectedTab.intValue) {
             0 -> MailScreen(
                 apiClient = apiClient,
+                onOpenSettings = { selectedTab.intValue = 4 },
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
             1 -> CalendarScreen(

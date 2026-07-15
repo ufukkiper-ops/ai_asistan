@@ -29,6 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Summarize
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.StarOutline
@@ -105,6 +105,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun MailScreen(
     apiClient: ApiClient,
+    onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val folders = remember { mutableStateListOf<MailFolder>() }
@@ -116,12 +117,14 @@ fun MailScreen(
     val account = remember { mutableStateOf("") }
     val loading = remember { mutableStateOf(false) }
     val loadError = remember { mutableStateOf<String?>(null) }
+    val needsMailSetup = remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     suspend fun loadMailsNow() {
         loading.value = true
         loadError.value = null
+        needsMailSetup.value = false
         try {
             val response = apiClient.api.mails(
                 folder = selectedFolder.value,
@@ -131,7 +134,17 @@ fun MailScreen(
             mails.addAll(response.mails)
             account.value = response.account
         } catch (e: Exception) {
-            val msg = e.message ?: "Mailler yüklenemedi"
+            val body = if (e is retrofit2.HttpException) {
+                e.response()?.errorBody()?.string().orEmpty()
+            } else {
+                ""
+            }
+            val msg = body.substringAfter("\"error\":\"", "").substringBefore("\"").ifBlank {
+                e.message ?: "Mailler yüklenemedi"
+            }
+            needsMailSetup.value = body.contains("\"needs_setup\"") ||
+                msg.contains("Mail hesabı", ignoreCase = true) ||
+                msg.contains("mail hesabı", ignoreCase = true)
             loadError.value = msg
             snackbar.showSnackbar(msg)
         } finally {
@@ -270,9 +283,18 @@ fun MailScreen(
                     }
                     loadError.value != null && mails.isEmpty() -> {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(24.dp),
+                            ) {
                                 Text(loadError.value!!, color = MaterialTheme.colorScheme.error)
                                 Spacer(Modifier.height(12.dp))
+                                if (needsMailSetup.value && onOpenSettings != null) {
+                                    Button(onClick = onOpenSettings) {
+                                        Text("Mail hesabı ekle")
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                }
                                 OutlinedButton(onClick = { loadMails() }) {
                                     Text("Tekrar dene")
                                 }
@@ -733,7 +755,7 @@ fun MailDetailScreen(
                             }
                         }) {
                             Icon(
-                                if (speaking.value) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                if (speaking.value) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                                 contentDescription = "Maili dinle",
                             )
                         }

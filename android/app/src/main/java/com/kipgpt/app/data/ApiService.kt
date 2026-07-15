@@ -31,6 +31,18 @@ interface KipGptApi {
     @GET("me")
     suspend fun me(): MeResponse
 
+    @GET("mail/accounts")
+    suspend fun mailAccounts(): MailAccountsResponse
+
+    @POST("mail/accounts")
+    suspend fun addMailAccount(@Body body: AddMailAccountRequest): MailAccountMutationResponse
+
+    @DELETE("mail/accounts/{id}")
+    suspend fun deleteMailAccount(@Path("id") id: String): MailAccountMutationResponse
+
+    @PUT("mail/accounts/{id}/activate")
+    suspend fun activateMailAccount(@Path("id") id: String): MailAccountMutationResponse
+
     @GET("chats")
     suspend fun chats(): ChatsResponse
 
