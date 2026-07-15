@@ -39,9 +39,9 @@
         </form>
 
         <div class="header-right">
-            <a href="/" class="icon-btn" title="Sohbete dön">
+            <button type="button" class="icon-btn chat-bubble-btn" id="chat-bubble-toggle" title="KipGPT Sohbet">
                 <span class="material-icons-outlined">chat</span>
-            </a>
+            </button>
             <a href="/logout" class="icon-btn" title="Çıkış">
                 <span class="material-icons-outlined">logout</span>
             </a>
@@ -390,6 +390,31 @@
 
     </div>
 
+<!-- KipGPT Sohbet Baloncuğu -->
+<div class="chat-bubble-panel" id="chat-bubble-panel" hidden>
+    <div class="chat-bubble-header">
+        <div class="chat-bubble-title">
+            <span class="material-icons-outlined">smart_toy</span>
+            <span>KipGPT Sohbet</span>
+        </div>
+        <button type="button" class="icon-btn chat-bubble-close" id="chat-bubble-close" title="Kapat">
+            <span class="material-icons-outlined">close</span>
+        </button>
+    </div>
+    <div class="chat-bubble-messages" id="chat-bubble-messages">
+        <div class="chat-bubble-empty">
+            <span class="material-icons-outlined">forum</span>
+            <p>KipGPT'ye bir şey sorun.</p>
+        </div>
+    </div>
+    <form class="chat-bubble-input" id="chat-bubble-form">
+        <input type="text" id="chat-bubble-text" placeholder="Mesajınızı yazın..." autocomplete="off">
+        <button type="submit" class="icon-round-btn icon-round-btn-send chat-bubble-send" title="Gönder">
+            <span class="material-icons-outlined">send</span>
+        </button>
+    </form>
+</div>
+
 <!-- Yaz Modal -->
 <div class="compose-overlay" id="compose-overlay" hidden>
     <div class="compose-modal">
@@ -648,6 +673,7 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='js/mail.js') }}?v=45"></script>
+<script src="{{ url_for('static', filename='js/mail_chat.js') }}?v=1"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
 {% endblock %}
