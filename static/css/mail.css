@@ -2670,10 +2670,12 @@ body.dialog-open .account-remove-form {
     background: #2563eb;
     color: #fff;
     box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
-    cursor: pointer;
+    cursor: grab;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    touch-action: none;
+    user-select: none;
 }
 
 .chat-bubble-fab:hover {
@@ -2684,8 +2686,15 @@ body.dialog-open .account-remove-form {
     background: #1e3a8a;
 }
 
+.chat-bubble-fab.is-dragging {
+    cursor: grabbing;
+    box-shadow: 0 12px 28px rgba(37, 99, 235, 0.45);
+    transform: scale(1.04);
+}
+
 .chat-bubble-fab .material-icons-outlined {
     font-size: 26px;
+    pointer-events: none;
 }
 
 .chat-bubble-panel {

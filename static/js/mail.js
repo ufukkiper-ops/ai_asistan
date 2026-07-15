@@ -1479,6 +1479,84 @@
     const chatBubbleOpen = document.getElementById("chat-bubble-open");
     const chatBubbleClose = document.getElementById("chat-bubble-close");
     let chatBubbleLoaded = false;
+    const CHAT_BUBBLE_POS_KEY = "kipgpt_chat_bubble_pos";
+    let bubbleDragMoved = false;
+
+    function clampBubblePosition(left, top, size) {
+        const maxLeft = Math.max(8, window.innerWidth - size - 8);
+        const maxTop = Math.max(8, window.innerHeight - size - 8);
+        return {
+            left: Math.min(Math.max(8, left), maxLeft),
+            top: Math.min(Math.max(8, top), maxTop),
+        };
+    }
+
+    function applyBubblePosition(left, top) {
+        if (!chatBubbleFab) return;
+        const size = chatBubbleFab.offsetWidth || 56;
+        const pos = clampBubblePosition(left, top, size);
+        chatBubbleFab.style.left = pos.left + "px";
+        chatBubbleFab.style.top = pos.top + "px";
+        chatBubbleFab.style.right = "auto";
+        chatBubbleFab.style.bottom = "auto";
+        positionChatPanel();
+        return pos;
+    }
+
+    function saveBubblePosition(left, top) {
+        try {
+            localStorage.setItem(CHAT_BUBBLE_POS_KEY, JSON.stringify({ left: left, top: top }));
+        } catch (e) {}
+    }
+
+    function restoreBubblePosition() {
+        if (!chatBubbleFab) return;
+        try {
+            const raw = localStorage.getItem(CHAT_BUBBLE_POS_KEY);
+            if (!raw) return;
+            const saved = JSON.parse(raw);
+            if (typeof saved.left === "number" && typeof saved.top === "number") {
+                applyBubblePosition(saved.left, saved.top);
+            }
+        } catch (e) {}
+    }
+
+    function positionChatPanel() {
+        if (!chatBubblePanel || !chatBubbleFab || chatBubblePanel.hidden) return;
+        if (window.innerWidth <= 640) {
+            chatBubblePanel.style.left = "0px";
+            chatBubblePanel.style.right = "0px";
+            chatBubblePanel.style.top = "auto";
+            chatBubblePanel.style.bottom = "0px";
+            return;
+        }
+
+        const fabRect = chatBubbleFab.getBoundingClientRect();
+        const panelWidth = Math.min(420, window.innerWidth - 24);
+        const panelHeight = Math.min(640, window.innerHeight - 24);
+        let left = fabRect.right - panelWidth;
+        let top = fabRect.top - panelHeight - 12;
+
+        if (top < 8) {
+            top = fabRect.bottom + 12;
+        }
+        if (left < 8) {
+            left = 8;
+        }
+        if (left + panelWidth > window.innerWidth - 8) {
+            left = window.innerWidth - panelWidth - 8;
+        }
+        if (top + panelHeight > window.innerHeight - 8) {
+            top = Math.max(8, window.innerHeight - panelHeight - 8);
+        }
+
+        chatBubblePanel.style.left = left + "px";
+        chatBubblePanel.style.top = top + "px";
+        chatBubblePanel.style.right = "auto";
+        chatBubblePanel.style.bottom = "auto";
+        chatBubblePanel.style.width = panelWidth + "px";
+        chatBubblePanel.style.height = panelHeight + "px";
+    }
 
     function openChatBubble() {
         if (!chatBubblePanel) return;
@@ -1490,6 +1568,7 @@
             chatBubbleFrame.src = "/chat?embed=1";
             chatBubbleLoaded = true;
         }
+        positionChatPanel();
     }
 
     function closeChatBubble() {
@@ -1509,9 +1588,77 @@
         }
     }
 
-    if (chatBubbleFab) {
-        chatBubbleFab.addEventListener("click", toggleChatBubble);
+    function enableChatBubbleDrag() {
+        if (!chatBubbleFab) return;
+
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+        let originLeft = 0;
+        let originTop = 0;
+
+        function onPointerDown(e) {
+            if (e.button !== undefined && e.button !== 0) return;
+            dragging = true;
+            bubbleDragMoved = false;
+            chatBubbleFab.classList.add("is-dragging");
+            const rect = chatBubbleFab.getBoundingClientRect();
+            originLeft = rect.left;
+            originTop = rect.top;
+            startX = e.clientX;
+            startY = e.clientY;
+            chatBubbleFab.setPointerCapture?.(e.pointerId);
+            e.preventDefault();
+        }
+
+        function onPointerMove(e) {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+                bubbleDragMoved = true;
+            }
+            applyBubblePosition(originLeft + dx, originTop + dy);
+        }
+
+        function onPointerUp(e) {
+            if (!dragging) return;
+            dragging = false;
+            chatBubbleFab.classList.remove("is-dragging");
+            try {
+                chatBubbleFab.releasePointerCapture?.(e.pointerId);
+            } catch (err) {}
+            const rect = chatBubbleFab.getBoundingClientRect();
+            const pos = applyBubblePosition(rect.left, rect.top);
+            saveBubblePosition(pos.left, pos.top);
+        }
+
+        chatBubbleFab.addEventListener("pointerdown", onPointerDown);
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+        window.addEventListener("pointercancel", onPointerUp);
+
+        chatBubbleFab.addEventListener("click", function (e) {
+            if (bubbleDragMoved) {
+                e.preventDefault();
+                e.stopPropagation();
+                bubbleDragMoved = false;
+                return;
+            }
+            toggleChatBubble();
+        });
+
+        window.addEventListener("resize", function () {
+            const rect = chatBubbleFab.getBoundingClientRect();
+            const pos = applyBubblePosition(rect.left, rect.top);
+            saveBubblePosition(pos.left, pos.top);
+            positionChatPanel();
+        });
     }
+
+    restoreBubblePosition();
+    enableChatBubbleDrag();
+
     if (chatBubbleOpen) {
         chatBubbleOpen.addEventListener("click", openChatBubble);
     }
