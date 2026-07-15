@@ -518,17 +518,18 @@ def filter_spam_from_inbox(config, mailler, settings=None):
         return clean, 0
 
     moved = 0
-    for item in spam_mails:
-        try:
-            move_mail_to_folder(
-                config,
-                "INBOX",
-                item["id"],
-                FOLDER_CANDIDATES["spam"],
-            )
-            moved += 1
-        except Exception as e:
-            print("SPAM TAŞIMA HATASI:", e)
+    try:
+        moved, errors = move_mails_to_folder(
+            config,
+            "INBOX",
+            [item["id"] for item in spam_mails],
+            FOLDER_CANDIDATES["spam"],
+            expand_threads=False,
+        )
+        for err in errors:
+            print("SPAM TAŞIMA HATASI:", err)
+    except Exception as e:
+        print("SPAM TAŞIMA HATASI:", e)
 
     spam_ids = {m["id"] for m in spam_mails}
     clean = [m for m in mailler if m["id"] not in spam_ids]
@@ -537,28 +538,32 @@ def filter_spam_from_inbox(config, mailler, settings=None):
 
 def get_folder_mails(config, folder="INBOX", count=20):
     mail = connect_mail(config, folder)
-    status, messages = mail.uid("search", None, "ALL")
-    if status != "OK":
-        mail.logout()
-        return []
+    try:
+        status, messages = mail.uid("search", None, "ALL")
+        if status != "OK":
+            return []
 
-    ids = messages[0].split()
-    result = []
+        ids = messages[0].split()
+        result = []
 
-    for mail_id in reversed(ids[-count:]):
+        for mail_id in reversed(ids[-count:]):
+            try:
+                thread_id, raw = _fetch_mail_by_uid(mail, mail_id, config)
+                if not raw:
+                    continue
+
+                parsed = parse_message(raw, thread_id=thread_id)
+                parsed["id"] = mail_id.decode()
+                result.append(parsed)
+            except Exception as e:
+                print("MAIL HATASI:", e)
+
+        return result
+    finally:
         try:
-            thread_id, raw = _fetch_mail_by_uid(mail, mail_id, config)
-            if not raw:
-                continue
-
-            parsed = parse_message(raw, thread_id=thread_id)
-            parsed["id"] = mail_id.decode()
-            result.append(parsed)
-        except Exception as e:
-            print("MAIL HATASI:", e)
-
-    mail.logout()
-    return result
+            mail.logout()
+        except Exception:
+            pass
 
 
 def get_first_available_folder(config, folder_names, count=20):
