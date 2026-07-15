@@ -156,10 +156,12 @@
     const filesClose = document.getElementById("files-close");
     const filesList = document.getElementById("files-list");
     const filesForm = document.getElementById("files-upload-form");
-    const composeLibrarySelect = document.getElementById("compose-library-select");
+    const composeLibraryBtn = document.getElementById("compose-library-btn");
+    const composeLibraryFile = document.getElementById("compose-library-file");
     const composeLibraryIds = document.getElementById("compose-library-ids");
     const composeLibraryChips = document.getElementById("compose-library-chips");
     const composeHtmlBody = document.getElementById("compose-html-body");
+    let selectedLibraryFiles = [];
 
     function escapeHtml(text) {
         return String(text || "")
@@ -171,7 +173,6 @@
 
     function renderFiles(files) {
         libraryCache = files.slice();
-        refreshComposeLibrarySelect();
         if (!filesList) return;
         if (!files.length) {
             filesList.innerHTML = "<p class='tool-empty'>Henüz dosya yok.</p>";
@@ -194,34 +195,65 @@
         }).join("");
     }
 
-    function refreshComposeLibrarySelect() {
-        if (!composeLibrarySelect) return;
-        const selected = new Set(
-            Array.from(composeLibrarySelect.selectedOptions || []).map(function (o) {
-                return o.value;
-            })
-        );
-        composeLibrarySelect.innerHTML = libraryCache.map(function (file) {
-            const isSelected = selected.has(file.id) ? " selected" : "";
-            return `<option value="${file.id}"${isSelected}>${escapeHtml(file.filename)}</option>`;
+    function syncComposeLibraryHidden() {
+        if (!composeLibraryIds) return;
+        composeLibraryIds.innerHTML = selectedLibraryFiles.map(function (file) {
+            return `<input type="hidden" name="library_file_ids" value="${file.id}">`;
         }).join("");
+        if (!composeLibraryChips) return;
+        if (!selectedLibraryFiles.length) {
+            composeLibraryChips.innerHTML = "";
+            return;
+        }
+        composeLibraryChips.innerHTML = selectedLibraryFiles.map(function (file) {
+            const aiTag = file.fromAi ? " <em>AI</em>" : "";
+            return (
+                `<span class="library-chip" data-id="${file.id}">` +
+                `${escapeHtml(file.filename)}${aiTag}` +
+                `<button type="button" class="library-chip-remove" title="Kaldır" aria-label="Kaldır">×</button>` +
+                `</span>`
+            );
+        }).join("");
+    }
+
+    function addSelectedLibraryFile(file, fromAi) {
+        if (!file || !file.id) return;
+        if (selectedLibraryFiles.some(function (item) { return item.id === file.id; })) {
+            return;
+        }
+        selectedLibraryFiles.push({
+            id: file.id,
+            filename: file.filename || file.id,
+            fromAi: !!fromAi,
+        });
         syncComposeLibraryHidden();
     }
 
-    function syncComposeLibraryHidden() {
-        if (!composeLibraryIds || !composeLibrarySelect) return;
-        const ids = Array.from(composeLibrarySelect.selectedOptions || []).map(function (o) {
-            return o.value;
+    function removeSelectedLibraryFile(id) {
+        selectedLibraryFiles = selectedLibraryFiles.filter(function (file) {
+            return file.id !== id;
         });
-        composeLibraryIds.innerHTML = ids.map(function (id) {
-            return `<input type="hidden" name="library_file_ids" value="${id}">`;
-        }).join("");
-        if (composeLibraryChips) {
-            composeLibraryChips.innerHTML = ids.map(function (id) {
-                const file = libraryCache.find(function (f) { return f.id === id; });
-                const name = file ? file.filename : id;
-                return `<span class="library-chip">${escapeHtml(name)}</span>`;
-            }).join("");
+        syncComposeLibraryHidden();
+    }
+
+    async function uploadComposeLibraryFile(file) {
+        if (!file) return;
+        if (file.size > 15 * 1024 * 1024) {
+            throw new Error("Dosya boyutu 15 MB sınırını aşıyor.");
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/files", { method: "POST", body: formData });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || "Dosya yüklenemedi");
+        }
+        const uploaded = data.file;
+        if (uploaded) {
+            libraryCache = [uploaded].concat(
+                libraryCache.filter(function (item) { return item.id !== uploaded.id; })
+            );
+            addSelectedLibraryFile(uploaded, false);
         }
     }
 
@@ -230,17 +262,14 @@
             if (composeHtmlBody && typeof htmlBody === "string") {
                 composeHtmlBody.value = htmlBody;
             }
-            if (!composeLibrarySelect || !attachments) return;
-            const ids = attachments.map(function (a) { return a.id; });
-            Array.from(composeLibrarySelect.options).forEach(function (opt) {
-                opt.selected = ids.indexOf(opt.value) !== -1;
+            if (!attachments || !attachments.length) return;
+            attachments.forEach(function (attachment) {
+                addSelectedLibraryFile(attachment, true);
             });
+        },
+        clearComposeLibraryAttachments: function () {
+            selectedLibraryFiles = [];
             syncComposeLibraryHidden();
-            if (composeLibraryChips && attachments.length) {
-                composeLibraryChips.innerHTML = attachments.map(function (a) {
-                    return `<span class="library-chip">${escapeHtml(a.filename)} <em>AI</em></span>`;
-                }).join("");
-            }
         },
         getLibraryCache: function () { return libraryCache.slice(); },
     };
@@ -274,8 +303,30 @@
             if (e.target === filesOverlay) closeOverlay(filesOverlay);
         });
     }
-    if (composeLibrarySelect) {
-        composeLibrarySelect.addEventListener("change", syncComposeLibraryHidden);
+    if (composeLibraryBtn && composeLibraryFile) {
+        composeLibraryBtn.addEventListener("click", function () {
+            composeLibraryFile.click();
+        });
+        composeLibraryFile.addEventListener("change", async function () {
+            const file = composeLibraryFile.files && composeLibraryFile.files[0];
+            composeLibraryFile.value = "";
+            if (!file) return;
+            try {
+                await uploadComposeLibraryFile(file);
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+    }
+    if (composeLibraryChips) {
+        composeLibraryChips.addEventListener("click", function (e) {
+            const removeBtn = e.target.closest(".library-chip-remove");
+            if (!removeBtn) return;
+            const chip = removeBtn.closest(".library-chip");
+            if (chip && chip.dataset.id) {
+                removeSelectedLibraryFile(chip.dataset.id);
+            }
+        });
     }
     if (filesForm) {
         filesForm.addEventListener("submit", async function (e) {

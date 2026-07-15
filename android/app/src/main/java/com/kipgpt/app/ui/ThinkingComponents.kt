@@ -21,9 +21,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -136,7 +136,7 @@ fun ChatMessageBubble(
                     modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
-                        if (speechHelper.isSpeaking()) Icons.Default.Stop else Icons.Default.VolumeUp,
+                        if (speechHelper.isSpeaking()) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = "Dinle",
                         tint = MaterialTheme.colorScheme.primary,
                     )
@@ -166,7 +166,7 @@ fun ChatMessageBubble(
                         modifier = Modifier.padding(bottom = 6.dp),
                     ) {
                         Icon(
-                            Icons.Default.InsertDriveFile,
+                            Icons.AutoMirrored.Filled.InsertDriveFile,
                             contentDescription = null,
                             tint = fg.copy(alpha = 0.9f),
                             modifier = Modifier.size(16.dp),

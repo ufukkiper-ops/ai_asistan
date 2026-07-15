@@ -12,12 +12,53 @@ data class MeResponse(
     val email: String,
     val auth_provider: String,
     val mail_accounts: List<MailAccount> = emptyList(),
+    val active_mail_account_id: String? = null,
 )
 
 data class MailAccount(
     val id: String = "",
     val email: String = "",
     val label: String = "",
+    val provider: String = "",
+)
+
+data class MailProviderPreset(
+    val label: String = "",
+    val hint: String = "",
+    val imap_server: String = "",
+    val smtp_server: String = "",
+    val imap_port: Int = 993,
+    val smtp_port: Int = 587,
+)
+
+data class MailAccountsResponse(
+    val accounts: List<MailAccount> = emptyList(),
+    val active_account_id: String? = null,
+    val providers: Map<String, MailProviderPreset> = emptyMap(),
+)
+
+data class AddMailAccountRequest(
+    val account_email: String,
+    val account_label: String = "",
+    val mail_provider: String = "gmail",
+    val mail_password: String,
+    val imap_server: String = "",
+    val smtp_server: String = "",
+    val imap_port: String = "993",
+    val smtp_port: String = "587",
+)
+
+data class AddMailAccountResponse(
+    val account: MailAccount,
+    val active_account_id: String,
+)
+
+data class ActivateMailAccountResponse(
+    val active_account_id: String,
+)
+
+data class DeleteMailAccountResponse(
+    val active_account_id: String? = null,
 )
 
 data class ChatSummary(

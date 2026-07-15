@@ -60,16 +60,30 @@ interface KipGptApi {
     @GET("mail/folders")
     suspend fun folders(): FoldersResponse
 
+    @GET("mail/accounts")
+    suspend fun mailAccounts(): MailAccountsResponse
+
+    @POST("mail/accounts")
+    suspend fun addMailAccount(@Body body: AddMailAccountRequest): AddMailAccountResponse
+
+    @PUT("mail/accounts/{id}/activate")
+    suspend fun activateMailAccount(@Path("id") id: String): ActivateMailAccountResponse
+
+    @DELETE("mail/accounts/{id}")
+    suspend fun deleteMailAccount(@Path("id") id: String): DeleteMailAccountResponse
+
     @GET("mail")
     suspend fun mails(
         @Query("folder") folder: String,
         @Query("search") search: String? = null,
+        @Query("account") account: String? = null,
     ): MailListResponse
 
     @GET("mail/detail")
     suspend fun mailDetail(
         @Query("mail_id") mailId: String,
         @Query("folder") folder: String,
+        @Query("account") account: String? = null,
     ): MailItem
 
     @GET("mail/attachment")

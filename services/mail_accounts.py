@@ -189,6 +189,23 @@ def add_mail_account(user, form):
     return new_account
 
 
+class _MappingForm:
+    """dict tabanlı form benzeri sarmalayıcı (mobil API için)."""
+
+    def __init__(self, data):
+        self._data = data or {}
+
+    def get(self, key, default=""):
+        value = self._data.get(key, default)
+        if value is None:
+            return default
+        return str(value)
+
+
+def add_mail_account_from_data(user, data):
+    return add_mail_account(user, _MappingForm(data))
+
+
 def remove_mail_account(user, account_id):
     user_id = (user.get("email") or user.get("username") or "").strip()
     accounts = ensure_user_mail_accounts(user)

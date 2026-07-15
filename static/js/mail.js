@@ -746,11 +746,17 @@
 
     if (composeClose && composeOverlay) {
         composeClose.addEventListener("click", function () {
+            if (window.KipMailTools && typeof KipMailTools.clearComposeLibraryAttachments === "function") {
+                KipMailTools.clearComposeLibraryAttachments();
+            }
             composeOverlay.hidden = true;
         });
 
         composeOverlay.addEventListener("click", function (e) {
             if (e.target === composeOverlay) {
+                if (window.KipMailTools && typeof KipMailTools.clearComposeLibraryAttachments === "function") {
+                    KipMailTools.clearComposeLibraryAttachments();
+                }
                 composeOverlay.hidden = true;
             }
         });
@@ -844,6 +850,9 @@
 
     if (composeBtn && composeOverlay) {
         composeBtn.addEventListener("click", function () {
+            if (window.KipMailTools && typeof KipMailTools.clearComposeLibraryAttachments === "function") {
+                KipMailTools.clearComposeLibraryAttachments();
+            }
             composeOverlay.hidden = false;
             renderComposeContacts(composeToInput?.value || "");
             if (composeToInput) {
@@ -951,7 +960,7 @@
                 }
                 if ((data.library_attachments || []).length) {
                     const names = data.library_attachments.map(function (a) { return a.filename; }).join(", ");
-                    window.alert("Kütüphaneden eklenecek dosyalar: " + names);
+                    window.alert("Eklenecek dosyalar: " + names);
                 }
             } catch (err) {
                 alert(err.message || "AI taslağı oluşturulurken hata oluştu.");

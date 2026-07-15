@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore("kipgpt_session")
@@ -14,6 +15,7 @@ class SessionManager(private val context: Context) {
         private val KEY_TOKEN = stringPreferencesKey("token")
         private val KEY_BASE_URL = stringPreferencesKey("base_url")
         private val KEY_USER_EMAIL = stringPreferencesKey("user_email")
+        private val KEY_MAIL_ACCOUNT = stringPreferencesKey("active_mail_account_id")
         const val DEFAULT_BASE_URL = "https://kip-asistan.onrender.com/api/v1/"
         const val EMULATOR_BASE_URL = "http://10.0.2.2:5001/api/v1/"
         const val RENDER_BASE_URL = "https://kip-asistan.onrender.com/api/v1/"
@@ -31,6 +33,14 @@ class SessionManager(private val context: Context) {
         prefs[KEY_USER_EMAIL]
     }
 
+    val activeMailAccountFlow: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_MAIL_ACCOUNT]
+    }
+
+    suspend fun getActiveMailAccount(): String? {
+        return activeMailAccountFlow.first()
+    }
+
     suspend fun saveToken(token: String, email: String? = null) {
         context.dataStore.edit { prefs ->
             prefs[KEY_TOKEN] = token
@@ -44,6 +54,17 @@ class SessionManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs.remove(KEY_TOKEN)
             prefs.remove(KEY_USER_EMAIL)
+            prefs.remove(KEY_MAIL_ACCOUNT)
+        }
+    }
+
+    suspend fun saveActiveMailAccount(accountId: String?) {
+        context.dataStore.edit { prefs ->
+            if (accountId.isNullOrBlank()) {
+                prefs.remove(KEY_MAIL_ACCOUNT)
+            } else {
+                prefs[KEY_MAIL_ACCOUNT] = accountId
+            }
         }
     }
 

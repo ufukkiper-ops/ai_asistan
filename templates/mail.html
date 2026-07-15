@@ -493,22 +493,13 @@
             <div class="library-attach-box" id="compose-library-box">
                 <input type="hidden" name="html_body" id="compose-html-body" value="">
                 <div class="library-attach-chips" id="compose-library-chips"></div>
-                <div class="library-attach-picker">
-                    <label class="library-attach-label" for="compose-library-select">Kütüphaneden ekle</label>
-                    <select id="compose-library-select" multiple size="3" aria-label="Dosya kütüphanesi">
-                        {% for f in file_library %}
-                        <option value="{{ f.id }}">{{ f.filename }}</option>
-                        {% endfor %}
-                    </select>
-                    <div id="compose-library-ids"></div>
-                </div>
+                <div id="compose-library-ids"></div>
             </div>
             <div class="compose-footer">
-                <label class="attach-btn" title="Dosya ekle">
+                <button type="button" class="icon-round-btn icon-round-btn-attach" id="compose-library-btn" title="Dosya ekle">
                     <span class="material-icons-outlined">attach_file</span>
-                    Ekle
-                    <input type="file" name="attachment" id="compose-file" class="mail-attach-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt">
-                </label>
+                </button>
+                <input type="file" id="compose-library-file" class="mail-attach-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" hidden>
                 <button type="button" class="icon-round-btn icon-round-btn-tonal" id="compose-ai-toggle" title="AI ile yaz">
                     <span class="material-icons-outlined">auto_awesome</span>
                 </button>
@@ -801,8 +792,8 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=52"></script>
-<script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=53"></script>
+<script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=2"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
 {% endblock %}

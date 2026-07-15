@@ -36,10 +36,21 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Summarize
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ManageAccounts
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -82,19 +93,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.kipgpt.app.data.AddMailAccountRequest
 import com.kipgpt.app.data.ApiClient
 import com.kipgpt.app.data.AttachmentSaver
 import com.kipgpt.app.data.LibraryAttachmentRef
+import com.kipgpt.app.data.MailAccount
 import com.kipgpt.app.data.MailAiComposeRequest
 import com.kipgpt.app.data.MailAiReplyRequest
 import com.kipgpt.app.data.MailAttachment
 import com.kipgpt.app.data.MailFolder
 import com.kipgpt.app.data.MailItem
+import com.kipgpt.app.data.MailProviderPreset
 import com.kipgpt.app.data.MailSendNewRequest
 import com.kipgpt.app.data.MailSendReplyRequest
 import com.kipgpt.app.data.MailSummaryData
 import com.kipgpt.app.data.MailSummaryRequest
 import com.kipgpt.app.data.OutgoingAttachmentPayload
+import com.kipgpt.app.data.SessionManager
 import com.kipgpt.app.data.SpeechHelper
 import com.kipgpt.app.data.TranslateRequest
 import kotlinx.coroutines.Dispatchers
@@ -105,27 +120,75 @@ import kotlinx.coroutines.withContext
 @Composable
 fun MailScreen(
     apiClient: ApiClient,
+    sessionManager: SessionManager,
     modifier: Modifier = Modifier,
 ) {
     val folders = remember { mutableStateListOf<MailFolder>() }
     val mails = remember { mutableStateListOf<MailItem>() }
+    val mailAccounts = remember { mutableStateListOf<MailAccount>() }
+    val providers = remember { mutableStateOf<Map<String, MailProviderPreset>>(emptyMap()) }
     val selectedFolder = remember { mutableStateOf("inbox") }
     val selectedMail = remember { mutableStateOf<MailItem?>(null) }
     val composing = remember { mutableStateOf(false) }
     val search = remember { mutableStateOf("") }
     val account = remember { mutableStateOf("") }
+    val activeAccountId = remember { mutableStateOf<String?>(null) }
+    val showAccountSheet = remember { mutableStateOf(false) }
+    val showAddAccountDialog = remember { mutableStateOf(false) }
+    val accountsLoading = remember { mutableStateOf(false) }
     val loading = remember { mutableStateOf(false) }
     val loadError = remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val accountSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    suspend fun syncActiveAccount(accountId: String) {
+        apiClient.api.activateMailAccount(accountId)
+        sessionManager.saveActiveMailAccount(accountId)
+        activeAccountId.value = accountId
+    }
+
+    suspend fun loadAccountsNow() {
+        accountsLoading.value = true
+        try {
+            val response = apiClient.api.mailAccounts()
+            mailAccounts.clear()
+            mailAccounts.addAll(response.accounts)
+            providers.value = response.providers
+
+            val savedId = sessionManager.getActiveMailAccount()
+            val targetId = when {
+                savedId != null && response.accounts.any { it.id == savedId } -> savedId
+                response.active_account_id != null -> response.active_account_id
+                response.accounts.isNotEmpty() -> response.accounts.first().id
+                else -> null
+            }
+
+            if (targetId != null && targetId != response.active_account_id) {
+                syncActiveAccount(targetId)
+            } else {
+                activeAccountId.value = targetId
+            }
+        } catch (e: Exception) {
+            snackbar.showSnackbar(e.message ?: "Hesaplar yüklenemedi")
+        } finally {
+            accountsLoading.value = false
+        }
+    }
 
     suspend fun loadMailsNow() {
+        if (mailAccounts.isEmpty()) {
+            mails.clear()
+            loadError.value = "Mail hesabı bağlı değil. Hesap ekleyin."
+            return
+        }
         loading.value = true
         loadError.value = null
         try {
             val response = apiClient.api.mails(
                 folder = selectedFolder.value,
                 search = search.value.trim().ifBlank { null },
+                account = activeAccountId.value,
             )
             mails.clear()
             mails.addAll(response.mails)
@@ -143,17 +206,140 @@ fun MailScreen(
         scope.launch { loadMailsNow() }
     }
 
+    fun switchAccount(accountId: String) {
+        scope.launch {
+            try {
+                syncActiveAccount(accountId)
+                showAccountSheet.value = false
+                loadMailsNow()
+            } catch (e: Exception) {
+                snackbar.showSnackbar(e.message ?: "Hesap değiştirilemedi")
+            }
+        }
+    }
+
+    fun deleteAccount(accountId: String) {
+        scope.launch {
+            try {
+                val response = apiClient.api.deleteMailAccount(accountId)
+                loadAccountsNow()
+                if (response.active_account_id != null) {
+                    sessionManager.saveActiveMailAccount(response.active_account_id)
+                    activeAccountId.value = response.active_account_id
+                } else {
+                    sessionManager.saveActiveMailAccount(null)
+                    activeAccountId.value = null
+                }
+                loadMailsNow()
+                snackbar.showSnackbar("Hesap kaldırıldı")
+            } catch (e: Exception) {
+                snackbar.showSnackbar(e.message ?: "Hesap silinemedi")
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
             folders.clear()
             folders.addAll(apiClient.api.folders().folders)
         } catch (_: Exception) {
         }
+        loadAccountsNow()
     }
 
-    LaunchedEffect(selectedFolder.value) {
-        if (selectedMail.value == null && !composing.value) {
+    LaunchedEffect(activeAccountId.value, selectedFolder.value) {
+        if (selectedMail.value == null && !composing.value && !accountsLoading.value) {
             loadMailsNow()
+        }
+    }
+
+    if (showAddAccountDialog.value) {
+        AddMailAccountDialog(
+            providers = providers.value,
+            saving = accountsLoading.value,
+            onDismiss = { showAddAccountDialog.value = false },
+            onSave = { request ->
+                scope.launch {
+                    accountsLoading.value = true
+                    try {
+                        val response = apiClient.api.addMailAccount(request)
+                        mailAccounts.clear()
+                        mailAccounts.addAll(apiClient.api.mailAccounts().accounts)
+                        syncActiveAccount(response.active_account_id)
+                        showAddAccountDialog.value = false
+                        showAccountSheet.value = false
+                        loadMailsNow()
+                        snackbar.showSnackbar("Mail hesabı eklendi")
+                    } catch (e: Exception) {
+                        snackbar.showSnackbar(e.message ?: "Hesap eklenemedi")
+                    } finally {
+                        accountsLoading.value = false
+                    }
+                }
+            },
+        )
+    }
+
+    if (showAccountSheet.value) {
+        ModalBottomSheet(
+            onDismissRequest = { showAccountSheet.value = false },
+            sheetState = accountSheetState,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp)
+                    .navigationBarsPadding(),
+            ) {
+                Text(
+                    "Mail Hesapları",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (mailAccounts.isEmpty()) {
+                    Text(
+                        "Henüz mail hesabı yok. Gmail, Outlook veya diğer sağlayıcılar için hesap ekleyin.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    mailAccounts.forEach { item ->
+                        ListItem(
+                            headlineContent = {
+                                Text(item.label.ifBlank { item.email })
+                            },
+                            supportingContent = { Text(item.email) },
+                            leadingContent = {
+                                RadioButton(
+                                    selected = activeAccountId.value == item.id,
+                                    onClick = { switchAccount(item.id) },
+                                )
+                            },
+                            trailingContent = {
+                                if (mailAccounts.size > 1) {
+                                    IconButton(onClick = { deleteAccount(item.id) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Hesabı kaldır")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.clickable { switchAccount(item.id) },
+                        )
+                    }
+                }
+                Button(
+                    onClick = {
+                        showAccountSheet.value = false
+                        showAddAccountDialog.value = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Hesap Ekle")
+                }
+            }
         }
     }
 
@@ -175,11 +361,15 @@ fun MailScreen(
             mail = selectedMail.value!!,
             folder = selectedFolder.value,
             apiClient = apiClient,
+            activeAccountId = activeAccountId.value,
             onBack = { selectedMail.value = null },
             modifier = modifier,
         )
         return
     }
+
+    val needsAccount = mailAccounts.isEmpty() ||
+        loadError.value?.contains("Mail hesabı bağlı değil", ignoreCase = true) == true
 
     Scaffold(
         modifier = modifier,
@@ -199,6 +389,9 @@ fun MailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showAccountSheet.value = true }) {
+                        Icon(Icons.Default.ManageAccounts, contentDescription = "Mail hesapları")
+                    }
                     IconButton(onClick = { loadMails() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Yenile")
                     }
@@ -206,8 +399,10 @@ fun MailScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { composing.value = true }) {
-                Icon(Icons.Default.Edit, contentDescription = "Yeni mail")
+            if (!needsAccount) {
+                FloatingActionButton(onClick = { composing.value = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Yeni mail")
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -217,6 +412,33 @@ fun MailScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            if (needsAccount) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp),
+                    ) {
+                        Text(
+                            "Mail hesabı bağlı değil",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Gmail, Outlook veya diğer IMAP/SMTP hesabınızı ekleyerek maillerinizi görüntüleyin.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = { showAddAccountDialog.value = true }) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Mail Hesabı Ekle")
+                        }
+                    }
+                }
+                return@Column
+            }
+
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -275,6 +497,12 @@ fun MailScreen(
                                 Spacer(Modifier.height(12.dp))
                                 OutlinedButton(onClick = { loadMails() }) {
                                     Text("Tekrar dene")
+                                }
+                                if (loadError.value?.contains("Mail hesabı bağlı değil", ignoreCase = true) == true) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = { showAddAccountDialog.value = true }) {
+                                        Text("Mail Hesabı Ekle")
+                                    }
                                 }
                             }
                         }
@@ -420,6 +648,7 @@ fun MailDetailScreen(
     mail: MailItem,
     folder: String,
     apiClient: ApiClient,
+    activeAccountId: String? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -556,7 +785,7 @@ fun MailDetailScreen(
     LaunchedEffect(mail.id, folder) {
         detailLoading.value = true
         try {
-            val full = apiClient.api.mailDetail(mail.id, folder)
+            val full = apiClient.api.mailDetail(mail.id, folder, activeAccountId)
             mailState.value = full
             content.value = full.content
             translatedLang.value = null
@@ -733,7 +962,7 @@ fun MailDetailScreen(
                             }
                         }) {
                             Icon(
-                                if (speaking.value) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                if (speaking.value) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                                 contentDescription = "Maili dinle",
                             )
                         }
@@ -1093,11 +1322,6 @@ fun MailDetailScreen(
                             )
                             if (libraryAttachments.value.isNotEmpty()) {
                                 Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "Kütüphane ekleri",
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                                Spacer(Modifier.height(4.dp))
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -1351,14 +1575,15 @@ fun ComposeMailScreen(
 
             if (libraryAttachments.value.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("Kütüphane ekleri", style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(4.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                 ) {
                     libraryAttachments.value.forEach { item ->
-                        AssistChip(onClick = {}, label = { Text(item.filename) })
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(item.filename) },
+                        )
                     }
                 }
             }
@@ -1448,29 +1673,19 @@ fun ComposeMailScreen(
 
             Spacer(Modifier.height(16.dp))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                OutlinedButton(
+                RoundAttachButton(
+                    enabled = !sending.value && !aiLoading.value,
                     onClick = { attachPicker.launch(arrayOf("*/*")) },
-                    enabled = !sending.value && !aiLoading.value,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.AttachFile, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Dosya ekle")
-                }
-                Button(
+                )
+                RoundSendButton(
+                    enabled = toEmail.value.isNotBlank() && body.value.isNotBlank(),
+                    loading = sending.value,
                     onClick = { sendMail() },
-                    enabled = !sending.value && !aiLoading.value,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    if (sending.value) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Gönder")
-                    }
-                }
+                )
             }
         }
     }
@@ -1501,4 +1716,199 @@ private fun formatSenderEmail(mail: MailItem): String {
         return emailMatch.groupValues[1].trim()
     }
     return mail.sender.trim().takeIf { it.contains("@") } ?: raw.takeIf { it.contains("@") } ?: ""
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddMailAccountDialog(
+    providers: Map<String, MailProviderPreset>,
+    saving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (AddMailAccountRequest) -> Unit,
+) {
+    val providerKeys = providers.keys.toList().ifEmpty {
+        listOf("gmail", "outlook", "yahoo", "custom")
+    }
+    val email = remember { mutableStateOf("") }
+    val label = remember { mutableStateOf("") }
+    val password = remember { mutableStateOf("") }
+    val showPassword = remember { mutableStateOf(false) }
+    val provider = remember { mutableStateOf(providerKeys.first()) }
+    val providerMenuOpen = remember { mutableStateOf(false) }
+    val imapServer = remember { mutableStateOf("") }
+    val smtpServer = remember { mutableStateOf("") }
+    val imapPort = remember { mutableStateOf("993") }
+    val smtpPort = remember { mutableStateOf("587") }
+
+    val selectedPreset = providers[provider.value]
+    val providerLabel = selectedPreset?.label ?: provider.value
+    val providerHint = selectedPreset?.hint ?: ""
+    val isCustom = provider.value == "custom"
+
+    LaunchedEffect(provider.value, selectedPreset) {
+        if (!isCustom && selectedPreset != null) {
+            imapServer.value = selectedPreset.imap_server
+            smtpServer.value = selectedPreset.smtp_server
+            imapPort.value = selectedPreset.imap_port.toString()
+            smtpPort.value = selectedPreset.smtp_port.toString()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = { Text("Mail Hesabı Ekle") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = email.value,
+                    onValueChange = { email.value = it },
+                    label = { Text("E-posta") },
+                    singleLine = true,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = label.value,
+                    onValueChange = { label.value = it },
+                    label = { Text("Etiket (isteğe bağlı)") },
+                    singleLine = true,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ExposedDropdownMenuBox(
+                    expanded = providerMenuOpen.value,
+                    onExpandedChange = { providerMenuOpen.value = !providerMenuOpen.value },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedTextField(
+                        value = providerLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Sağlayıcı") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = providerMenuOpen.value)
+                        },
+                        modifier = Modifier
+                            .menuAnchor(type = MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                        enabled = !saving,
+                    )
+                    ExposedDropdownMenu(
+                        expanded = providerMenuOpen.value,
+                        onDismissRequest = { providerMenuOpen.value = false },
+                    ) {
+                        providerKeys.forEach { key ->
+                            val itemLabel = providers[key]?.label ?: key
+                            DropdownMenuItem(
+                                text = { Text(itemLabel) },
+                                onClick = {
+                                    provider.value = key
+                                    providerMenuOpen.value = false
+                                },
+                            )
+                        }
+                    }
+                }
+                if (providerHint.isNotBlank()) {
+                    Text(
+                        providerHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedTextField(
+                    value = password.value,
+                    onValueChange = { password.value = it },
+                    label = { Text("Şifre / Uygulama şifresi") },
+                    singleLine = true,
+                    enabled = !saving,
+                    visualTransformation = if (showPassword.value) {
+                        androidx.compose.ui.text.input.VisualTransformation.None
+                    } else {
+                        androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword.value = !showPassword.value }) {
+                            Icon(
+                                if (showPassword.value) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (showPassword.value) "Gizle" else "Göster",
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (isCustom) {
+                    OutlinedTextField(
+                        value = imapServer.value,
+                        onValueChange = { imapServer.value = it },
+                        label = { Text("IMAP sunucu") },
+                        singleLine = true,
+                        enabled = !saving,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = smtpServer.value,
+                        onValueChange = { smtpServer.value = it },
+                        label = { Text("SMTP sunucu") },
+                        singleLine = true,
+                        enabled = !saving,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = imapPort.value,
+                            onValueChange = { imapPort.value = it },
+                            label = { Text("IMAP port") },
+                            singleLine = true,
+                            enabled = !saving,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = smtpPort.value,
+                            onValueChange = { smtpPort.value = it },
+                            label = { Text("SMTP port") },
+                            singleLine = true,
+                            enabled = !saving,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        AddMailAccountRequest(
+                            account_email = email.value.trim(),
+                            account_label = label.value.trim(),
+                            mail_provider = provider.value,
+                            mail_password = password.value,
+                            imap_server = imapServer.value.trim(),
+                            smtp_server = smtpServer.value.trim(),
+                            imap_port = imapPort.value.trim(),
+                            smtp_port = smtpPort.value.trim(),
+                        ),
+                    )
+                },
+                enabled = !saving && email.value.isNotBlank() && password.value.isNotBlank(),
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                } else {
+                    Text("Ekle")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) {
+                Text("İptal")
+            }
+        },
+    )
 }
