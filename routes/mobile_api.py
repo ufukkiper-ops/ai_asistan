@@ -2,7 +2,15 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from io import BytesIO
 
 from services.api_auth import create_api_token, require_api_user
-from services.mail_accounts import list_accounts_for_ui, resolve_active_mail_config
+from services.mail_accounts import (
+    add_mail_account,
+    get_active_account_id,
+    list_accounts_for_ui,
+    remove_mail_account,
+    resolve_active_mail_config,
+    set_active_account,
+)
+from services.mail_config import MAIL_PRESETS
 from services.mail_settings import get_mail_settings
 from services.mail_ui import (
     FOLDERS,
@@ -179,10 +187,112 @@ def api_me(user_id):
         return jsonify({"error": "Kullanıcı bulunamadı."}), 404
 
     accounts = list_accounts_for_ui(user)
+    active_id = get_active_account_id(user, {})
     return jsonify({
         "email": user_id,
         "auth_provider": user.get("auth_provider", "local"),
         "mail_accounts": accounts,
+        "active_mail_account": active_id,
+    })
+
+
+@mobile_api_bp.route("/mail/accounts", methods=["GET"])
+@require_api_user
+def api_mail_accounts(user_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+    return jsonify({
+        "accounts": list_accounts_for_ui(user),
+        "active_mail_account": get_active_account_id(user, {}),
+        "providers": {
+            key: {"label": value.get("label", key), "hint": value.get("hint", "")}
+            for key, value in MAIL_PRESETS.items()
+        },
+    })
+
+
+@mobile_api_bp.route("/mail/accounts", methods=["POST"])
+@require_api_user
+def api_mail_accounts_add(user_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    form = {
+        "account_email": payload.get("account_email") or payload.get("email") or "",
+        "account_label": payload.get("account_label") or payload.get("label") or "",
+        "mail_provider": payload.get("mail_provider") or payload.get("provider") or "gmail",
+        "mail_password": payload.get("mail_password") or payload.get("password") or "",
+        "imap_server": payload.get("imap_server") or "",
+        "smtp_server": payload.get("smtp_server") or "",
+        "imap_port": str(payload.get("imap_port") or "993"),
+        "smtp_port": str(payload.get("smtp_port") or "587"),
+    }
+
+    try:
+        new_account = add_mail_account(user, form)
+        user = find_user_by_id(user_id)
+        session_proxy = {}
+        if user:
+            set_active_account(user, session_proxy, new_account["id"])
+            user = find_user_by_id(user_id)
+        return jsonify({
+            "account": {
+                "id": new_account["id"],
+                "email": new_account["email"],
+                "label": new_account.get("label") or new_account["email"],
+                "provider": new_account.get("provider", "custom"),
+            },
+            "accounts": list_accounts_for_ui(user) if user else [],
+            "active_mail_account": new_account["id"],
+            "message": f"{new_account['email']} hesabı eklendi.",
+        }), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@mobile_api_bp.route("/mail/accounts/<account_id>", methods=["DELETE"])
+@require_api_user
+def api_mail_accounts_delete(user_id, account_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+    try:
+        next_id = remove_mail_account(user, account_id)
+        user = find_user_by_id(user_id)
+        session_proxy = {}
+        if user and next_id:
+            set_active_account(user, session_proxy, next_id)
+            user = find_user_by_id(user_id)
+        return jsonify({
+            "ok": True,
+            "active_mail_account": next_id,
+            "accounts": list_accounts_for_ui(user) if user else [],
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@mobile_api_bp.route("/mail/accounts/<account_id>/activate", methods=["PUT"])
+@require_api_user
+def api_mail_accounts_activate(user_id, account_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+    session_proxy = {}
+    if not set_active_account(user, session_proxy, account_id):
+        return jsonify({"error": "Hesap bulunamadı."}), 404
+    user = find_user_by_id(user_id)
+    return jsonify({
+        "ok": True,
+        "active_mail_account": account_id,
+        "accounts": list_accounts_for_ui(user) if user else [],
     })
 
 
@@ -362,7 +472,10 @@ def api_mail_list(user_id):
 
     mail_config, active_account, settings = _mail_context(user)
     if not mail_config:
-        return jsonify({"error": "Mail hesabı bağlı değil. Web üzerinden mail hesabı ekleyin."}), 400
+        return jsonify({
+            "error": "Mail hesabı bağlı değil. Ayarlar → Mail hesabı ekle ile ekleyin.",
+            "needs_setup": True,
+        }), 400
 
     folder = (request.args.get("folder") or "inbox").strip()
     search = (request.args.get("search") or "").strip()
