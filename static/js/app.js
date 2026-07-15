@@ -346,7 +346,7 @@ async function sendTextMessage(event) {
     updateChatSendState();
 
     try {
-        const response = await fetch("/", {
+        const response = await fetch("/chat", {
             method: "POST",
             body: formData,
         });

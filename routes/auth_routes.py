@@ -40,6 +40,9 @@ def _init_user_data(email):
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
+    if "user" in session:
+        return redirect(url_for("mail.mail_page"))
+
     error = session.pop("auth_error", "")
     google_enabled = is_google_configured()
 
@@ -175,6 +178,9 @@ def google_auth_callback():
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
+    if "user" in session:
+        return redirect(url_for("mail.mail_page"))
+
     error = session.pop("auth_error", "")
     google_enabled = is_google_configured()
 

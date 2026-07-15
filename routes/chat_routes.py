@@ -172,8 +172,14 @@ def clear_chat():
 
 
 
-@chat_bp.route("/", methods=["GET", "POST"])
+@chat_bp.route("/")
+def root():
+    if "user" not in session:
+        return redirect(url_for("auth.login"))
+    return redirect(url_for("mail.mail_page"))
 
+
+@chat_bp.route("/chat", methods=["GET", "POST"])
 def index():
 
     redirect_response = _require_login()
