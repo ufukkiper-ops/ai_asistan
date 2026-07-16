@@ -1,0 +1,9 @@
+{
+  "extraPaths": ["."],
+  "pythonVersion": "3.11",
+  "exclude": [
+    "**/__pycache__",
+    "android",
+    ".git"
+  ]
+}

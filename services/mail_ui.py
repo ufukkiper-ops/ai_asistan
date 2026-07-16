@@ -24,7 +24,7 @@ from services.chat_service import ask_gpt_mail_reply, get_client
 from services.mail_threads import expand_selected_mail_ids, group_mails_by_thread
 from services.mail_contacts import remember_contacts_from_fields
 from services.file_service import parse_uploaded_attachment
-from services.mail_enrich_service import wants_enrichment
+from services.mail_enrich_service import generate_enriched_mail, wants_enrichment
 from services.file_library_service import load_attachments
 
 FOLDERS = [
@@ -193,8 +193,6 @@ def generate_ai_mail_reply(
     should_enrich = enrich if enrich is not None else wants_enrichment(instruction)
 
     if should_enrich:
-        from services.mail_enrich_service import generate_enriched_mail
-
         return generate_enriched_mail(
             user,
             mode="reply",
@@ -274,8 +272,6 @@ def generate_ai_new_mail(
     should_enrich = enrich if enrich is not None else wants_enrichment(instruction)
 
     if should_enrich:
-        from services.mail_enrich_service import generate_enriched_mail
-
         return generate_enriched_mail(
             user,
             mode="compose",
