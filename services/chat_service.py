@@ -62,7 +62,18 @@ def plain_text_response(text):
 
 
 def get_client():
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        # Sunucu .env guncellendiyse yeniden yukle (restart gerekmeden)
+        try:
+            from pathlib import Path
+            from dotenv import load_dotenv
+
+            root = Path(__file__).resolve().parent.parent
+            load_dotenv(root / ".env", override=True)
+        except Exception:
+            pass
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         return None
     return OpenAI(api_key=api_key)

@@ -53,7 +53,7 @@ def _mail_url(folder="inbox", account_id=None, search=""):
 @mail_bp.route("/mail-version")
 def mail_version():
     return {
-        "ui_version": "gmail-v56",
+        "ui_version": "gmail-v57",
         "layout": "gmail-sidebar",
         "message": "Çoklu mail hesabı desteği",
     }
@@ -388,5 +388,5 @@ def mail_page():
         calendar_reminders=calendar_reminders,
         file_library=file_library,
         translate_languages=supported_languages(),
-        ui_version="gmail-v56",
+        ui_version="gmail-v57",
     )

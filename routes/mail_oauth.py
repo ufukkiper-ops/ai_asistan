@@ -153,14 +153,18 @@ def _handle_callback(provider):
                 fetch_google_email,
                 flow_for_callback,
             )
-            from services.public_url import mail_oauth_redirect_uri
+            from services.public_url import external_request_url, mail_oauth_redirect_uri
 
             flow = flow_for_callback(
                 state,
                 saved.get("code_verifier"),
                 redirect_uri=redirect_uri or mail_oauth_redirect_uri("google", request),
             )
-            tokens = exchange_code_for_credentials(flow, request.url)
+            tokens = exchange_code_for_credentials(
+                flow,
+                external_request_url(request),
+                require_mail_scope=True,
+            )
             email = fetch_google_email(tokens["access_token"])
             provider_key = "google_oauth"
         elif provider == "microsoft":

@@ -401,10 +401,17 @@
         summaryBtn.addEventListener("click", async function () {
             const mailId = document.body.dataset.activeMailId || "";
             const readerBody = document.getElementById("reader-body");
+            const readerThread = document.getElementById("reader-thread");
             const readerFrom = document.getElementById("reader-from");
             const readerSubject = document.getElementById("reader-subject");
-            const content = (readerBody?.innerText || "").trim();
-            if (!content) {
+            const aiContentField = document.getElementById("ai-content");
+            const content = (
+                (readerBody && !readerBody.hidden ? readerBody.innerText : "") ||
+                (readerThread && !readerThread.hidden ? readerThread.innerText : "") ||
+                (aiContentField && aiContentField.value) ||
+                ""
+            ).trim();
+            if (!content && !mailId) {
                 alert("Önce bir mail seçin.");
                 return;
             }
@@ -417,6 +424,7 @@
                 const res = await fetch("/mail/ai-summary", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
+                    credentials: "same-origin",
                     body: JSON.stringify({
                         mail_id: mailId,
                         folder: document.body.dataset.mailFolder || "inbox",
@@ -427,12 +435,12 @@
                         create_reminders: false,
                     }),
                 });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "Özet alınamadı");
+                const data = await res.json().catch(function () { return {}; });
+                if (!res.ok) throw new Error(data.error || ("Özet alınamadı (" + res.status + ")"));
                 renderSummary(data.summary, data.reminders_created || []);
             } catch (err) {
                 if (summaryBox) {
-                    summaryBox.innerHTML = `<div class="summary-card">${escapeHtml(err.message)}</div>`;
+                    summaryBox.innerHTML = `<div class="summary-card summary-error">${escapeHtml(err.message)}</div>`;
                 } else {
                     alert(err.message);
                 }

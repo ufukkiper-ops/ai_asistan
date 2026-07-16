@@ -28,6 +28,15 @@ interface KipGptApi {
     @POST("register")
     suspend fun register(@Body body: RegisterRequest): LoginResponse
 
+    @GET("auth/google/start")
+    suspend fun googleAuthStart(
+        @Query("action") action: String,
+        @Query("with_mail") withMail: Int = 0,
+    ): GoogleAuthStartResponse
+
+    @GET("auth/google/status")
+    suspend fun googleAuthStatus(): GoogleAuthStatusResponse
+
     @GET("me")
     suspend fun me(): MeResponse
 

@@ -1,0 +1,14 @@
+{
+  "include": ["."],
+  "exclude": ["**/__pycache__", "android", "user_files", ".venv", "venv"],
+  "extraPaths": ["."],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": ["."]
+    }
+  ]
+}

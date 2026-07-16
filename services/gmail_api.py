@@ -111,7 +111,10 @@ def build_gmail_service(config):
     if creds.refresh_token:
         config["refresh_token"] = creds.refresh_token
     if creds.expiry:
-        config["token_expiry"] = creds.expiry.isoformat()
+        from services.google_auth import _naive_utc_expiry
+
+        expiry = _naive_utc_expiry(creds.expiry)
+        config["token_expiry"] = expiry.isoformat() if expiry else None
 
     try:
         return build("gmail", "v1", credentials=creds, cache_discovery=False)

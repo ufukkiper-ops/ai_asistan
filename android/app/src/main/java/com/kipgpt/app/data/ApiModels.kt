@@ -2,9 +2,30 @@ package com.kipgpt.app.data
 
 data class LoginRequest(val email: String, val password: String)
 
-data class RegisterRequest(val email: String, val password: String)
+data class RegisterRequest(
+    val email: String,
+    val password: String,
+    val link_gmail: Boolean = false,
+)
 
-data class LoginResponse(val token: String, val user: UserInfo)
+data class LoginResponse(
+    val token: String,
+    val user: UserInfo,
+    val link_gmail: Boolean = false,
+    val gmail_oauth_available: Boolean = false,
+)
+
+data class GoogleAuthStartResponse(
+    val authorization_url: String = "",
+    val action: String = "",
+    val with_mail: Boolean = false,
+    val configured: Boolean = true,
+    val error: String? = null,
+)
+
+data class GoogleAuthStatusResponse(
+    val configured: Boolean = false,
+)
 
 data class UserInfo(val email: String, val auth_provider: String)
 

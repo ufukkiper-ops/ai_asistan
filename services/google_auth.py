@@ -10,11 +10,14 @@ from google_auth_oauthlib.flow import Flow
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CLIENT_SECRETS_FILE = ROOT_DIR / "google_client_secret.json"
 
-# Kayıt + Gmail senkronu için gerekli izinler
-GMAIL_SCOPES = [
+# Sadece Google ile giris/kayit
+AUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
+]
+# Gmail senkronu (istege bagli)
+GMAIL_SCOPES = AUTH_SCOPES + [
     "https://mail.google.com/",
 ]
 
@@ -22,6 +25,29 @@ GMAIL_SCOPES = [
 def _ensure_insecure_transport():
     if os.getenv("OAUTHLIB_INSECURE_TRANSPORT") is None:
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    # Google bazen daraltılmis scope dondurur; oauthlib hata atmasin
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
+
+def _has_gmail_scope(scopes) -> bool:
+    for scope in scopes or []:
+        s = (scope or "").lower()
+        if "mail.google.com" in s or "googleapis.com/auth/gmail" in s:
+            return True
+    return False
+
+
+def _naive_utc_expiry(value):
+    """google-auth Credentials.expiry icin timezone'siz UTC datetime."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 def get_redirect_uri():
@@ -89,19 +115,30 @@ def get_mail_link_redirect_uri():
     return "http://127.0.0.1:5001/mail/oauth/google/callback"
 
 
-def build_authorization_url(action="register", force_account_picker=False, redirect_uri=None):
-    flow = create_oauth_flow(redirect_uri=redirect_uri)
-    prompt = "consent select_account" if action in {"link_mail", "consent"} or force_account_picker else "select_account"
+def build_authorization_url(
+    action="register",
+    force_account_picker=False,
+    redirect_uri=None,
+    with_mail=False,
+):
+    # Mail OAuth start (link_mail) her zaman Gmail scope ister
+    with_mail = bool(with_mail) or action in {"link_mail", "consent", "register_mail", "login_mail"}
+    scopes = GMAIL_SCOPES if with_mail else AUTH_SCOPES
+    flow = create_oauth_flow(redirect_uri=redirect_uri, scopes=scopes)
+    # Gmail baglama veya hesap secici: consent + select_account
+    want_consent = with_mail or force_account_picker
+    prompt = "consent select_account" if want_consent else "select_account"
     auth_kwargs = {
         "access_type": "offline",
-        "include_granted_scopes": "true",
         "prompt": prompt,
     }
+    if not with_mail:
+        auth_kwargs["include_granted_scopes"] = "true"
     authorization_url, state = flow.authorization_url(**auth_kwargs)
     return authorization_url, state, flow.code_verifier
 
 
-def create_oauth_flow(redirect_uri=None):
+def create_oauth_flow(redirect_uri=None, scopes=None):
     _ensure_insecure_transport()
 
     config = get_client_config()
@@ -110,19 +147,29 @@ def create_oauth_flow(redirect_uri=None):
 
     return Flow.from_client_config(
         config,
-        scopes=GMAIL_SCOPES,
+        scopes=scopes or GMAIL_SCOPES,
         redirect_uri=redirect_uri or get_redirect_uri(),
     )
 
 
-def exchange_code_for_credentials(flow, authorization_response):
+def exchange_code_for_credentials(flow, authorization_response, require_mail_scope=False):
+    _ensure_insecure_transport()
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
+    scopes = list(credentials.scopes or [])
+    if require_mail_scope and not _has_gmail_scope(scopes):
+        raise RuntimeError(
+            "Gmail izni verilmedi. Google Cloud Console → OAuth consent screen → "
+            "Data Access / Scopes bölümüne https://mail.google.com/ ekleyin. "
+            "Sonra https://myaccount.google.com/permissions adresinden "
+            "ai_kipasistan erişimini kaldırıp tekrar «Gmail ile senkronize et» deyin."
+        )
+    expiry = _naive_utc_expiry(credentials.expiry)
     return {
         "access_token": credentials.token,
         "refresh_token": credentials.refresh_token,
-        "token_expiry": credentials.expiry.isoformat() if credentials.expiry else None,
-        "scopes": list(credentials.scopes or []),
+        "token_expiry": expiry.isoformat() if expiry else None,
+        "scopes": scopes,
     }
 
 
@@ -150,14 +197,18 @@ def credentials_from_user_mail(mail_data):
 
     if mail_data.get("token_expiry"):
         try:
-            creds.expiry = datetime.fromisoformat(mail_data["token_expiry"])
-            if creds.expiry.tzinfo is None:
-                creds.expiry = creds.expiry.replace(tzinfo=timezone.utc)
+            creds.expiry = _naive_utc_expiry(mail_data["token_expiry"])
         except ValueError:
             pass
 
-    if creds.expired and creds.refresh_token:
+    try:
+        needs_refresh = bool(creds.expired)
+    except TypeError:
+        # naive/aware karisikligi: guvenli tarafta yenile
+        needs_refresh = True
+    if needs_refresh and creds.refresh_token:
         creds.refresh(Request())
+        creds.expiry = _naive_utc_expiry(creds.expiry)
 
     return creds
 
@@ -167,10 +218,11 @@ def get_fresh_access_token(mail_data):
     if not creds or not creds.token:
         return None, None
 
+    expiry = _naive_utc_expiry(creds.expiry)
     updated = {
         "access_token": creds.token,
         "refresh_token": creds.refresh_token or mail_data.get("refresh_token"),
-        "token_expiry": creds.expiry.isoformat() if creds.expiry else None,
+        "token_expiry": expiry.isoformat() if expiry else None,
         "scopes": list(creds.scopes or mail_data.get("scopes") or GMAIL_SCOPES),
     }
     return creds.token, updated
@@ -192,7 +244,7 @@ def fetch_google_email(access_token):
     return email
 
 
-def flow_for_callback(state, code_verifier, redirect_uri=None):
+def flow_for_callback(state, code_verifier, redirect_uri=None, with_mail=False):
     _ensure_insecure_transport()
 
     config = get_client_config()
@@ -201,7 +253,7 @@ def flow_for_callback(state, code_verifier, redirect_uri=None):
 
     flow = Flow.from_client_config(
         config,
-        scopes=GMAIL_SCOPES,
+        scopes=GMAIL_SCOPES if with_mail else AUTH_SCOPES,
         state=state,
         redirect_uri=redirect_uri or get_redirect_uri(),
     )

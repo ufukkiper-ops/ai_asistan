@@ -167,7 +167,7 @@ def update_user_mail_tokens(email, token_data):
     return True
 
 
-def create_google_user(email, oauth_tokens):
+def create_google_user(email, oauth_tokens, link_mail=False):
     users = load_users()
     user = {
         "email": email,
@@ -178,21 +178,22 @@ def create_google_user(email, oauth_tokens):
     }
     users.append(user)
     save_users(users)
-    try:
+    if link_mail and oauth_tokens:
+        from services.google_auth import _has_gmail_scope
         from services.oauth_mail import upsert_oauth_mail_account
-        upsert_oauth_mail_account(
-            email,
-            email=email,
-            provider_key="google_oauth",
-            tokens=oauth_tokens or {},
-            label=email,
-        )
-    except Exception:
-        pass
+
+        if _has_gmail_scope(oauth_tokens.get("scopes")):
+            upsert_oauth_mail_account(
+                email,
+                email=email,
+                provider_key="google_oauth",
+                tokens=oauth_tokens or {},
+                label=email,
+            )
     return find_user_by_id(email) or user
 
 
-def link_google_mail_to_user(email, oauth_tokens):
+def link_google_mail_to_user(email, oauth_tokens, link_mail=True):
     users = load_users()
     index = find_user_index_by_email(email)
     if index is None:
@@ -200,15 +201,16 @@ def link_google_mail_to_user(email, oauth_tokens):
 
     users[index]["auth_provider"] = "google"
     save_users(users)
-    try:
+    if link_mail and oauth_tokens:
+        from services.google_auth import _has_gmail_scope
         from services.oauth_mail import upsert_oauth_mail_account
-        upsert_oauth_mail_account(
-            email,
-            email=email,
-            provider_key="google_oauth",
-            tokens=oauth_tokens or {},
-            label=email,
-        )
-    except Exception:
-        pass
+
+        if _has_gmail_scope(oauth_tokens.get("scopes")):
+            upsert_oauth_mail_account(
+                email,
+                email=email,
+                provider_key="google_oauth",
+                tokens=oauth_tokens or {},
+                label=email,
+            )
     return find_user_by_id(email)

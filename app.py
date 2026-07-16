@@ -14,8 +14,10 @@ bootstrap_google_credentials()
 
 # Google OAuth localhost HTTP desteği
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from routes.auth_routes import auth_bp
 from routes.chat_routes import chat_bp
@@ -36,6 +38,8 @@ def create_app():
     application = Flask(__name__)
     application.secret_key = resolve_flask_secret_key()
     application.config["TEMPLATES_AUTO_RELOAD"] = True
+    # Render / reverse-proxy: https ve Host bilgisini dogru oku (OAuth callback icin kritik)
+    application.wsgi_app = ProxyFix(application.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     application.register_blueprint(auth_bp)
     application.register_blueprint(chat_bp)

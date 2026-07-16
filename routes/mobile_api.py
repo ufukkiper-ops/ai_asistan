@@ -151,6 +151,7 @@ def api_register():
     payload = request.get_json(silent=True) or {}
     email = (payload.get("email") or "").strip().lower()
     password = (payload.get("password") or "").strip()
+    link_gmail = bool(payload.get("link_gmail"))
 
     if not email or not password:
         return jsonify({"error": "E-posta ve şifre gerekli."}), 400
@@ -180,10 +181,66 @@ def api_register():
     save_data(data)
 
     token = create_api_token(current_app.secret_key, email)
-    return jsonify({
+    response = {
         "token": token,
         "user": {"email": email, "auth_provider": "local"},
-    }), 201
+        "link_gmail": link_gmail,
+    }
+    if link_gmail:
+        from services.google_auth import is_google_configured
+
+        response["gmail_oauth_available"] = is_google_configured()
+    return jsonify(response), 201
+
+
+@mobile_api_bp.route("/auth/google/start", methods=["GET"])
+def api_google_auth_start():
+    """Android: Google ile giris/kayit; with_mail=1 ise Gmail de baglanir."""
+    from services.google_auth import build_authorization_url, get_redirect_uri, is_google_configured
+    from services.oauth_mail import save_oauth_state
+
+    if not is_google_configured():
+        return jsonify({"error": "Google OAuth sunucuda yapılandırılmadı.", "configured": False}), 503
+
+    action = (request.args.get("action") or "login").strip().lower()
+    if action not in {"login", "register"}:
+        action = "login"
+    with_mail = request.args.get("with_mail") == "1"
+
+    try:
+        authorization_url, state, code_verifier = build_authorization_url(
+            action=action,
+            force_account_picker=True,
+            redirect_uri=get_redirect_uri(),
+            with_mail=with_mail,
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    save_oauth_state(
+        state,
+        {
+            "purpose": "auth",
+            "mobile": True,
+            "action": action,
+            "with_mail": with_mail,
+            "code_verifier": code_verifier,
+            "redirect_uri": get_redirect_uri(),
+        },
+    )
+    return jsonify({
+        "authorization_url": authorization_url,
+        "action": action,
+        "with_mail": with_mail,
+        "configured": True,
+    })
+
+
+@mobile_api_bp.route("/auth/google/status", methods=["GET"])
+def api_google_auth_status():
+    from services.google_auth import is_google_configured
+
+    return jsonify({"configured": is_google_configured()})
 
 
 @mobile_api_bp.route("/me", methods=["GET"])

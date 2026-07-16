@@ -11,35 +11,66 @@
     <img class="auth-brand-logo" src="{{ url_for('static', filename='img/kipgpt-logo.png') }}" width="280" height="280" alt="KipGPT">
 </div>
 
-<h2>Google Bağlantısı (Geliştirici)</h2>
+<h2>Gmail’i şifresiz bağla</h2>
 
 <p class="setup-intro">
-    Bu sayfa sadece uygulama sahibi içindir. Bir kez kurulunca giriş ve kayıt sayfalarında
-    <b>Google ile Giriş</b> butonu görünür.
+    Bu ekranda <b>Gmail adresiniz / şifreniz yazılmaz</b>.
+    Google Cloud’dan indirdiğiniz OAuth dosyasını (veya Client ID + Secret) bir kez kaydedersiniz;
+    sonra kullanıcılar Google ile onay verip senkron olur.
 </p>
+
+<ol class="setup-steps">
+    <li>
+        <a href="https://console.cloud.google.com/apis/credentials/oauthclient" target="_blank" rel="noopener">OAuth client oluştur</a>
+        (Application type: <b>Web application</b>).
+    </li>
+    <li>
+        Authorized redirect URIs:
+        <code class="setup-code">{{ redirect_uri }}</code>
+        <code class="setup-code">{{ mail_redirect_uri }}</code>
+    </li>
+    <li>
+        <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail API → Enable</a>
+    </li>
+    <li>
+        Credentials’tan client’ı açıp <b>Download JSON</b> ile dosyayı indirin
+        (veya Client ID / Secret’i kopyalayın).
+    </li>
+</ol>
 
 {% if error %}
 <div class="error">{{ error }}</div>
 {% endif %}
 
-<form method="post" class="setup-form">
+<form method="post" class="setup-form" enctype="multipart/form-data" autocomplete="off">
     <input type="hidden" name="next" value="{{ next_action }}">
 
-    <label class="field-label">Client ID</label>
-    <input type="text" name="client_id" placeholder="....apps.googleusercontent.com" required>
+    <label class="field-label">En kolay yol: JSON dosyası</label>
+    <input type="file" name="client_json" accept=".json,application/json" class="setup-file">
 
-    <label class="field-label">Client Secret</label>
-    <input type="password" name="client_secret" placeholder="GOCSPX-..." required>
+    <p class="setup-or">veya elle yapıştır</p>
+
+    <label class="field-label">OAuth Client ID</label>
+    <input type="text" name="client_id" inputmode="url" autocomplete="off"
+           placeholder="Gerçek değer: ....apps.googleusercontent.com"
+           title="Örnek metni değil, Console’daki gerçek Client ID">
+
+    <label class="field-label">OAuth Client Secret</label>
+    <input type="password" name="client_secret" autocomplete="new-password"
+           placeholder="Gerçek değer: GOCSPX-...">
 
     <p class="provider-hint">
-        Redirect URI: <code class="setup-code">{{ redirect_uri }}</code>
+        Gri yazılar örnek / yer tutucudur — kopyalayıp kaydetmeyin.
+        JSON yüklerseniz alttaki iki alan boş kalabilir.
     </p>
 
-    <button class="btn btn-blue btn-block" type="submit">Kaydet</button>
+    <button class="btn btn-blue btn-block" type="submit">Kaydet ve Gmail’i bağla</button>
 </form>
 
 <p class="auth-footer-link">
-<a href="{{ url_for('auth.login') }}">Giriş sayfasına dön</a>
+<a href="{{ url_for('mail.mail_page') if next_action == 'link_mail' else url_for('auth.login') }}">
+    {% if next_action == 'link_mail' %}Mail sayfasına dön{% else %}Giriş sayfasına dön{% endif %}
+</a>
 </p>
 
 </div>

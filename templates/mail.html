@@ -756,41 +756,46 @@
 
         <div class="mail-dialog-body">
             {% set oauth = oauth_providers|default({}, true) %}
-            {% set google_oauth_ok = oauth.google.configured if oauth.google is defined else false %}
-            {% set microsoft_oauth_ok = oauth.microsoft.configured if oauth.microsoft is defined else false %}
-            {% set yahoo_oauth_ok = oauth.yahoo.configured if oauth.yahoo is defined else false %}
+            {% set google_oauth_ok = (oauth.google.configured if oauth.google is defined else false) %}
+            {% set microsoft_oauth_ok = (oauth.microsoft.configured if oauth.microsoft is defined else false) %}
+            {% set yahoo_oauth_ok = (oauth.yahoo.configured if oauth.yahoo is defined else false) %}
             <div class="oauth-connect-block">
                 <p class="dialog-label">Şifresiz bağla (önerilen)</p>
                 <div class="oauth-connect-grid">
-                    <a class="oauth-connect-btn oauth-google{% if not google_oauth_ok %} is-disabled{% endif %}"
-                       href="{% if google_oauth_ok %}/mail/oauth/google/start{% else %}#{% endif %}"
-                       {% if not google_oauth_ok %}aria-disabled="true" tabindex="-1"{% endif %}
+                    <a class="oauth-connect-btn oauth-google{% if not google_oauth_ok %} is-warn{% endif %}"
+                       href="/mail/oauth/google/start"
+                       data-oauth-provider="google"
+                       data-oauth-configured="{{ '1' if google_oauth_ok else '0' }}"
                        title="Google OAuth ile Gmail bağla">
                         <span class="material-icons-outlined">mail</span>
-                        Gmail Hesabı Ekle
+                        Gmail ile senkronize et
                     </a>
-                    <a class="oauth-connect-btn oauth-microsoft{% if not microsoft_oauth_ok %} is-disabled{% endif %}"
-                       href="{% if microsoft_oauth_ok %}/mail/oauth/microsoft/start{% else %}#{% endif %}"
-                       {% if not microsoft_oauth_ok %}aria-disabled="true" tabindex="-1"{% endif %}>
+                    <a class="oauth-connect-btn oauth-microsoft{% if not microsoft_oauth_ok %} is-warn{% endif %}"
+                       href="/mail/oauth/microsoft/start"
+                       data-oauth-provider="microsoft"
+                       data-oauth-configured="{{ '1' if microsoft_oauth_ok else '0' }}">
                         <span class="material-icons-outlined">windows</span>
                         Outlook
                     </a>
-                    <a class="oauth-connect-btn oauth-yahoo{% if not yahoo_oauth_ok %} is-disabled{% endif %}"
-                       href="{% if yahoo_oauth_ok %}/mail/oauth/yahoo/start{% else %}#{% endif %}"
-                       {% if not yahoo_oauth_ok %}aria-disabled="true" tabindex="-1"{% endif %}>
+                    <a class="oauth-connect-btn oauth-yahoo{% if not yahoo_oauth_ok %} is-warn{% endif %}"
+                       href="/mail/oauth/yahoo/start"
+                       data-oauth-provider="yahoo"
+                       data-oauth-configured="{{ '1' if yahoo_oauth_ok else '0' }}">
                         <span class="material-icons-outlined">alternate_email</span>
                         Yahoo
                     </a>
                 </div>
                 <p class="dialog-hint" id="oauth-connect-hint">
-                    Google / Microsoft / Yahoo hesabınızla giriş yapın; mailler otomatik senkronize olur.
-                    {% if not google_oauth_ok and not microsoft_oauth_ok and not yahoo_oauth_ok %}
-                    <br>OAuth anahtarları henüz sunucuda tanımlı değil — aşağıdan şifre ile ekleyebilirsiniz.
+                    {% if google_oauth_ok %}
+                    Google hesabınızla onay verin — uygulama şifresi gerekmez, mailler senkronize olur.
+                    {% else %}
+                    <strong>Gmail Hesabı Ekle</strong> ile şifresiz senkron açılır
+                    (bir kez Google Cloud OAuth anahtarı gerekir; e-posta/şifre değil).
                     {% endif %}
                 </p>
             </div>
 
-            <div class="oauth-or-divider"><span>veya şifre ile ekle</span></div>
+            <div class="oauth-or-divider"><span>gelişmiş: şifre / IMAP</span></div>
 
             <form method="post" action="/mail?folder={{ folder }}{% if active_account_id %}&account={{ active_account_id }}{% endif %}" class="account-form" id="account-password-form">
                 <input type="hidden" name="islem" value="hesap_ekle">
@@ -805,7 +810,7 @@
 
                 <label class="dialog-field">
                     <span class="dialog-label">E-posta adresi</span>
-                    <input type="email" name="account_email" class="dialog-input" placeholder="ornek@gmail.com" required>
+                    <input type="email" name="account_email" id="account-email" class="dialog-input" placeholder="ornek@gmail.com" required>
                 </label>
 
                 <label class="dialog-field">
@@ -821,7 +826,7 @@
 
                 <label class="dialog-field">
                     <span class="dialog-label">E-posta / uygulama şifresi</span>
-                    <input type="password" name="mail_password" class="dialog-input" placeholder="••••••••••••" required>
+                    <input type="password" name="mail_password" id="account-password" class="dialog-input" placeholder="••••••••••••" required>
                 </label>
 
                 <div id="account-custom-fields" class="dialog-custom-fields" hidden>
@@ -893,6 +898,6 @@
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=2"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=58"></script>
-<script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=62"></script>
+<script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=3"></script>
 {% endblock %}
