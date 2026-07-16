@@ -4,6 +4,7 @@ import imaplib
 import mimetypes
 import re
 import smtplib
+import time
 from datetime import datetime
 from email import encoders
 from email.mime.audio import MIMEAudio
@@ -280,12 +281,29 @@ def _parse_date_ts(date_header):
         return 0
 
 
+def _extract_address_list(header_value):
+    """From/To/Cc başlığından görünen metin ve e-posta listesi çıkar."""
+    display = decode_mail_header(header_value)
+    if not display:
+        return "", []
+
+    emails = []
+    seen = set()
+    for match in re.finditer(r"[\w.+-]+@[\w.-]+\.\w+", display):
+        addr = match.group(0).strip().lower()
+        if addr and addr not in seen:
+            seen.add(addr)
+            emails.append(addr)
+    return display, emails
+
+
 def parse_message(raw, thread_id=None):
     msg = email.message_from_bytes(raw)
     subject = decode_mail_header(msg.get("Subject"))
-    sender_display = decode_mail_header(msg.get("From"))
-    match = re.search(r"[\w\.-]+@[\w\.-]+", sender_display)
-    sender = match.group(0) if match else sender_display
+    sender_display, sender_emails = _extract_address_list(msg.get("From"))
+    sender = sender_emails[0] if sender_emails else sender_display
+    to_display, to_emails = _extract_address_list(msg.get("To"))
+    cc_display, cc_emails = _extract_address_list(msg.get("Cc"))
     reference_ids = _extract_reference_ids(msg)
     in_reply_to = _normalize_message_id(msg.get("In-Reply-To"))
 
@@ -293,6 +311,10 @@ def parse_message(raw, thread_id=None):
         "subject": subject,
         "sender_display": sender_display,
         "sender": sender,
+        "to": to_display,
+        "to_emails": to_emails,
+        "cc": cc_display,
+        "cc_emails": cc_emails,
         "date": format_mail_date(msg.get("Date")),
         "date_ts": _parse_date_ts(msg.get("Date")),
         "content": extract_body(msg),
@@ -713,15 +735,94 @@ def fetch_attachment(config, folder, mail_id, index):
 
 
 def send_reply_mail(config, to_email, subject, body, attachments=None, cc=None, bcc=None, html_body=None):
+    from services.gmail_api import is_gmail_api_config, send_mail as gmail_send
+
+    if is_gmail_api_config(config):
+        return gmail_send(
+            config, to_email, subject, body,
+            attachments=attachments, cc=cc, bcc=bcc, html_body=html_body,
+        )
     return _send_mail(
         config, to_email, subject, body, attachments, cc=cc, bcc=bcc, html_body=html_body
     )
 
 
 def send_new_mail(config, to_email, subject, body, attachments=None, cc=None, bcc=None, html_body=None):
+    from services.gmail_api import is_gmail_api_config, send_mail as gmail_send
+
+    if is_gmail_api_config(config):
+        return gmail_send(
+            config, to_email, subject, body,
+            attachments=attachments, cc=cc, bcc=bcc, html_body=html_body,
+        )
     return _send_mail(
         config, to_email, subject, body, attachments, cc=cc, bcc=bcc, html_body=html_body
     )
+
+
+def has_draft_content(to_email="", subject="", body="", cc=None, bcc=None, html_body=None, attachments=None):
+    if any(
+        str(value or "").strip()
+        for value in (to_email, subject, body, cc, bcc, html_body)
+    ):
+        return True
+    return bool(attachments)
+
+
+def save_draft_mail(config, to_email="", subject="", body="", attachments=None, cc=None, bcc=None, html_body=None):
+    """Gönderilmemiş iletiyi Taslaklar klasörüne kaydeder (Gmail API veya IMAP)."""
+    if not has_draft_content(to_email, subject, body, cc, bcc, html_body, attachments):
+        return False
+
+    from services.gmail_api import create_draft, is_gmail_api_config
+
+    if is_gmail_api_config(config):
+        return create_draft(
+            config,
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            attachments=attachments,
+            cc=cc,
+            bcc=bcc,
+            html_body=html_body,
+        )
+
+    msg, _, _, _ = _build_mail_message(
+        config,
+        to_email=to_email,
+        subject=subject or "(Konu yok)",
+        body=body or "",
+        attachments=attachments,
+        cc=cc,
+        bcc=bcc,
+        html_body=html_body,
+        require_to=False,
+    )
+
+    folder = resolve_folder_name(config, FOLDER_CANDIDATES["drafts"])
+    if not folder:
+        raise Exception("Taslaklar klasörü bulunamadı.")
+
+    imap_host, imap_port, _, _ = _safe_mail_endpoints(config)
+    mail_conn = imaplib.IMAP4_SSL(imap_host, imap_port)
+    try:
+        _imap_login(mail_conn, config)
+        raw = msg.as_bytes()
+        status, _ = mail_conn.append(
+            folder,
+            "\\Draft",
+            imaplib.Time2Internaldate(time.time()),
+            raw,
+        )
+        if status != "OK":
+            raise Exception("Taslak kaydedilemedi.")
+        return True
+    finally:
+        try:
+            mail_conn.logout()
+        except Exception:
+            pass
 
 
 def _parse_recipient_list(value):
@@ -761,20 +862,31 @@ def _attach_files(msg, attachments):
         msg.attach(part)
 
 
-def _send_mail(config, to_email, subject, body, attachments=None, cc=None, bcc=None, html_body=None):
+def _build_mail_message(
+    config,
+    to_email,
+    subject,
+    body,
+    attachments=None,
+    cc=None,
+    bcc=None,
+    html_body=None,
+    require_to=True,
+):
     to_list = _parse_recipient_list(to_email)
     cc_list = _parse_recipient_list(cc)
     bcc_list = _parse_recipient_list(bcc)
 
-    if not to_list:
+    if require_to and not to_list:
         raise ValueError("Alıcı e-posta adresi gerekli.")
 
     msg = MIMEMultipart("mixed")
     msg["From"] = config["email"]
-    msg["To"] = ", ".join(to_list)
+    if to_list:
+        msg["To"] = ", ".join(to_list)
     if cc_list:
         msg["Cc"] = ", ".join(cc_list)
-    msg["Subject"] = subject
+    msg["Subject"] = subject or ""
 
     if html_body:
         alternative = MIMEMultipart("alternative")
@@ -785,6 +897,21 @@ def _send_mail(config, to_email, subject, body, attachments=None, cc=None, bcc=N
         msg.attach(MIMEText(body or "", "plain", "utf-8"))
 
     _attach_files(msg, attachments)
+    return msg, to_list, cc_list, bcc_list
+
+
+def _send_mail(config, to_email, subject, body, attachments=None, cc=None, bcc=None, html_body=None):
+    msg, to_list, cc_list, bcc_list = _build_mail_message(
+        config,
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        attachments=attachments,
+        cc=cc,
+        bcc=bcc,
+        html_body=html_body,
+        require_to=True,
+    )
 
     recipients = list(dict.fromkeys(to_list + cc_list + bcc_list))
 

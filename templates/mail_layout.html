@@ -6,11 +6,15 @@
 
     <meta charset="UTF-8">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
     <title>{{ title if title else "KipGPT Mail" }}</title>
 
     <!-- {{ ui_version }} -->
+
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/kipgpt-icon-192.png') }}">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
 
@@ -49,7 +53,7 @@
 
 </head>
 
-<body data-mail-folder="{{ folder }}" data-mail-account="{{ active_account_id or '' }}">
+<body data-mail-folder="{{ folder }}" data-mail-account="{{ active_account_id or '' }}" data-own-email="{{ (active_account.email if active_account else '')|e }}">
 
 {% block content %}{% endblock %}
 

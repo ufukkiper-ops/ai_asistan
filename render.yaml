@@ -12,6 +12,8 @@ services:
         value: "true"
       - key: FLASK_SECRET_KEY
         generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -19,4 +21,18 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GOOGLE_MAIL_REDIRECT_URI
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_REDIRECT_URI
+        sync: false
+      - key: YAHOO_CLIENT_ID
+        sync: false
+      - key: YAHOO_CLIENT_SECRET
+        sync: false
+      - key: YAHOO_REDIRECT_URI
         sync: false

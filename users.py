@@ -178,7 +178,18 @@ def create_google_user(email, oauth_tokens):
     }
     users.append(user)
     save_users(users)
-    return user
+    try:
+        from services.oauth_mail import upsert_oauth_mail_account
+        upsert_oauth_mail_account(
+            email,
+            email=email,
+            provider_key="google_oauth",
+            tokens=oauth_tokens or {},
+            label=email,
+        )
+    except Exception:
+        pass
+    return find_user_by_id(email) or user
 
 
 def link_google_mail_to_user(email, oauth_tokens):
@@ -189,4 +200,15 @@ def link_google_mail_to_user(email, oauth_tokens):
 
     users[index]["auth_provider"] = "google"
     save_users(users)
-    return users[index]
+    try:
+        from services.oauth_mail import upsert_oauth_mail_account
+        upsert_oauth_mail_account(
+            email,
+            email=email,
+            provider_key="google_oauth",
+            tokens=oauth_tokens or {},
+            label=email,
+        )
+    except Exception:
+        pass
+    return find_user_by_id(email)

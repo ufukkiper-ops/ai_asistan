@@ -79,7 +79,29 @@ def get_google_setup_hint():
     return "Google henüz bağlı değil. Önce Google ayarlarını yapın."
 
 
-def create_oauth_flow():
+def get_mail_link_redirect_uri():
+    explicit = (os.getenv("GOOGLE_MAIL_REDIRECT_URI") or "").strip()
+    if explicit:
+        return explicit
+    base = get_redirect_uri()
+    if base.endswith("/auth/google/callback"):
+        return base[: -len("/auth/google/callback")] + "/mail/oauth/google/callback"
+    return "http://127.0.0.1:5001/mail/oauth/google/callback"
+
+
+def build_authorization_url(action="register", force_account_picker=False, redirect_uri=None):
+    flow = create_oauth_flow(redirect_uri=redirect_uri)
+    prompt = "consent select_account" if action in {"link_mail", "consent"} or force_account_picker else "select_account"
+    auth_kwargs = {
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": prompt,
+    }
+    authorization_url, state = flow.authorization_url(**auth_kwargs)
+    return authorization_url, state, flow.code_verifier
+
+
+def create_oauth_flow(redirect_uri=None):
     _ensure_insecure_transport()
 
     config = get_client_config()
@@ -89,19 +111,8 @@ def create_oauth_flow():
     return Flow.from_client_config(
         config,
         scopes=GMAIL_SCOPES,
-        redirect_uri=get_redirect_uri(),
+        redirect_uri=redirect_uri or get_redirect_uri(),
     )
-
-
-def build_authorization_url(action="register", force_account_picker=False):
-    flow = create_oauth_flow()
-    auth_kwargs = {
-        "access_type": "offline",
-        "include_granted_scopes": "true",
-        "prompt": "select_account",
-    }
-    authorization_url, state = flow.authorization_url(**auth_kwargs)
-    return authorization_url, state, flow.code_verifier
 
 
 def exchange_code_for_credentials(flow, authorization_response):
@@ -181,7 +192,7 @@ def fetch_google_email(access_token):
     return email
 
 
-def flow_for_callback(state, code_verifier):
+def flow_for_callback(state, code_verifier, redirect_uri=None):
     _ensure_insecure_transport()
 
     config = get_client_config()
@@ -192,7 +203,7 @@ def flow_for_callback(state, code_verifier):
         config,
         scopes=GMAIL_SCOPES,
         state=state,
-        redirect_uri=get_redirect_uri(),
+        redirect_uri=redirect_uri or get_redirect_uri(),
     )
     flow.code_verifier = code_verifier
     return flow

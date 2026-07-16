@@ -1,6 +1,7 @@
 package com.kipgpt.app.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Base64
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ListItem
@@ -93,6 +96,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.kipgpt.app.data.AddMailAccountRequest
 import com.kipgpt.app.data.ApiClient
 import com.kipgpt.app.data.AttachmentSaver
@@ -104,6 +110,8 @@ import com.kipgpt.app.data.MailAttachment
 import com.kipgpt.app.data.MailFolder
 import com.kipgpt.app.data.MailItem
 import com.kipgpt.app.data.MailProviderPreset
+import com.kipgpt.app.data.OAuthProviderStatus
+import com.kipgpt.app.data.MailSaveDraftRequest
 import com.kipgpt.app.data.MailSendNewRequest
 import com.kipgpt.app.data.MailSendReplyRequest
 import com.kipgpt.app.data.MailSummaryData
@@ -123,10 +131,14 @@ fun MailScreen(
     sessionManager: SessionManager,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val folders = remember { mutableStateListOf<MailFolder>() }
     val mails = remember { mutableStateListOf<MailItem>() }
     val mailAccounts = remember { mutableStateListOf<MailAccount>() }
     val providers = remember { mutableStateOf<Map<String, MailProviderPreset>>(emptyMap()) }
+    val oauthProviders = remember { mutableStateOf<Map<String, OAuthProviderStatus>>(emptyMap()) }
+    val awaitingOAuthReturn = remember { mutableStateOf(false) }
     val selectedFolder = remember { mutableStateOf("inbox") }
     val selectedMail = remember { mutableStateOf<MailItem?>(null) }
     val composing = remember { mutableStateOf(false) }
@@ -155,6 +167,7 @@ fun MailScreen(
             mailAccounts.clear()
             mailAccounts.addAll(response.accounts)
             providers.value = response.providers
+            oauthProviders.value = response.oauth_providers
 
             val savedId = sessionManager.getActiveMailAccount()
             val targetId = when {
@@ -247,6 +260,21 @@ fun MailScreen(
         loadAccountsNow()
     }
 
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && awaitingOAuthReturn.value) {
+                awaitingOAuthReturn.value = false
+                scope.launch {
+                    loadAccountsNow()
+                    loadMailsNow()
+                    snackbar.showSnackbar("Hesaplar güncellendi")
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(activeAccountId.value, selectedFolder.value) {
         if (selectedMail.value == null && !composing.value && !accountsLoading.value) {
             loadMailsNow()
@@ -256,8 +284,32 @@ fun MailScreen(
     if (showAddAccountDialog.value) {
         AddMailAccountDialog(
             providers = providers.value,
+            oauthProviders = oauthProviders.value,
             saving = accountsLoading.value,
             onDismiss = { showAddAccountDialog.value = false },
+            onOAuth = { providerKey ->
+                scope.launch {
+                    accountsLoading.value = true
+                    try {
+                        val response = apiClient.api.mailOAuthStart(providerKey)
+                        val url = response.authorization_url
+                        if (url.isBlank()) {
+                            snackbar.showSnackbar("OAuth adresi alınamadı")
+                            return@launch
+                        }
+                        awaitingOAuthReturn.value = true
+                        showAddAccountDialog.value = false
+                        showAccountSheet.value = false
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        context.startActivity(intent)
+                        snackbar.showSnackbar("Tarayıcıda giriş yapın; dönünce otomatik yenilenir")
+                    } catch (e: Exception) {
+                        snackbar.showSnackbar(e.message ?: "OAuth başlatılamadı")
+                    } finally {
+                        accountsLoading.value = false
+                    }
+                }
+            },
             onSave = { request ->
                 scope.launch {
                     accountsLoading.value = true
@@ -1482,6 +1534,46 @@ fun ComposeMailScreen(
         }
     }
 
+    fun hasDraftContent(): Boolean {
+        return toEmail.value.isNotBlank() ||
+            subject.value.isNotBlank() ||
+            body.value.isNotBlank() ||
+            htmlBody.value.isNotBlank() ||
+            libraryAttachments.value.isNotEmpty() ||
+            pendingAttachment.value != null
+    }
+
+    fun saveDraftAndBack() {
+        scope.launch {
+            if (!hasDraftContent()) {
+                onBack()
+                return@launch
+            }
+            sending.value = true
+            try {
+                val response = apiClient.api.saveMailDraft(
+                    MailSaveDraftRequest(
+                        to_email = toEmail.value.trim(),
+                        subject = subject.value.trim(),
+                        body = body.value.trim(),
+                        html_body = htmlBody.value,
+                        library_file_ids = libraryAttachments.value.map { it.id },
+                        attachment = pendingAttachment.value,
+                    ),
+                )
+                if (response.saved) {
+                    snackbar.showSnackbar("Taslak kaydedildi")
+                }
+                onBack()
+            } catch (e: Exception) {
+                snackbar.showSnackbar(e.message ?: "Taslak kaydedilemedi")
+                // Kullanıcı tekrar deneyebilir; geri dönme
+            } finally {
+                sending.value = false
+            }
+        }
+    }
+
     fun sendMail() {
         scope.launch {
             val to = toEmail.value.trim()
@@ -1522,11 +1614,20 @@ fun ComposeMailScreen(
             TopAppBar(
                 title = { Text("Yeni İleti") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = { saveDraftAndBack() },
+                        enabled = !sending.value,
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { saveDraftAndBack() },
+                        enabled = !sending.value && !aiLoading.value,
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = "Taslak kaydet")
+                    }
                     IconButton(
                         onClick = { showAiPanel.value = !showAiPanel.value },
                         enabled = !aiLoading.value && !sending.value,
@@ -1538,6 +1639,9 @@ fun ComposeMailScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
+        BackHandler(enabled = !sending.value) {
+            saveDraftAndBack()
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1722,8 +1826,10 @@ private fun formatSenderEmail(mail: MailItem): String {
 @Composable
 private fun AddMailAccountDialog(
     providers: Map<String, MailProviderPreset>,
+    oauthProviders: Map<String, OAuthProviderStatus>,
     saving: Boolean,
     onDismiss: () -> Unit,
+    onOAuth: (String) -> Unit,
     onSave: (AddMailAccountRequest) -> Unit,
 ) {
     val providerKeys = providers.keys.toList().ifEmpty {
@@ -1744,6 +1850,9 @@ private fun AddMailAccountDialog(
     val providerLabel = selectedPreset?.label ?: provider.value
     val providerHint = selectedPreset?.hint ?: ""
     val isCustom = provider.value == "custom"
+    val googleReady = oauthProviders["google"]?.configured == true
+    val microsoftReady = oauthProviders["microsoft"]?.configured == true
+    val yahooReady = oauthProviders["yahoo"]?.configured == true
 
     LaunchedEffect(provider.value, selectedPreset) {
         if (!isCustom && selectedPreset != null) {
@@ -1764,6 +1873,39 @@ private fun AddMailAccountDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Text(
+                    "Şifresiz bağla (önerilen)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { onOAuth("google") },
+                        enabled = !saving && googleReady,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Gmail Hesabı Ekle") }
+                    OutlinedButton(
+                        onClick = { onOAuth("microsoft") },
+                        enabled = !saving && microsoftReady,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Outlook") }
+                    OutlinedButton(
+                        onClick = { onOAuth("yahoo") },
+                        enabled = !saving && yahooReady,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Yahoo") }
+                }
+                Text(
+                    "Tarayıcıda giriş yapın; ardından uygulamada Yenile ile mailleri çekin.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider()
+                Text(
+                    "veya şifre ile ekle",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedTextField(
                     value = email.value,
                     onValueChange = { email.value = it },

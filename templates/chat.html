@@ -9,7 +9,10 @@
     {% if not embed %}
     <div class="sidebar">
 
-        <h2>KipGPT</h2>
+        <div class="sidebar-brand">
+            <img class="sidebar-brand-icon" src="{{ url_for('static', filename='img/kipgpt-icon.png') }}" width="36" height="36" alt="KipGPT">
+            <h2>KipGPT</h2>
+        </div>
 
         <div class="user-box">
             <b>{{ username }}</b>

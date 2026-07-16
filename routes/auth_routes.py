@@ -205,5 +205,12 @@ def login():
 
 @auth_bp.route("/logout")
 def logout():
-    session.pop("user", None)
+    user_id = session.get("user")
+    if user_id:
+        try:
+            from services.oauth_mail import clear_user_oauth_tokens
+            clear_user_oauth_tokens(user_id, revoke=True)
+        except Exception:
+            pass
+    session.clear()
     return redirect(url_for("auth.login"))

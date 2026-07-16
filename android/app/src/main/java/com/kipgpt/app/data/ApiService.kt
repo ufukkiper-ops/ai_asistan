@@ -63,6 +63,12 @@ interface KipGptApi {
     @GET("mail/accounts")
     suspend fun mailAccounts(): MailAccountsResponse
 
+    @GET("mail/oauth/{provider}/start")
+    suspend fun mailOAuthStart(
+        @Path("provider") provider: String,
+        @Query("label") label: String? = null,
+    ): MailOAuthStartResponse
+
     @POST("mail/accounts")
     suspend fun addMailAccount(@Body body: AddMailAccountRequest): AddMailAccountResponse
 
@@ -111,6 +117,9 @@ interface KipGptApi {
 
     @POST("mail/send-new")
     suspend fun sendNewMail(@Body body: MailSendNewRequest): MailSendNewResponse
+
+    @POST("mail/save-draft")
+    suspend fun saveMailDraft(@Body body: MailSaveDraftRequest): MailSaveDraftResponse
 
     @POST("mail/summary")
     suspend fun mailSummary(@Body body: MailSummaryRequest): MailSummaryResponse

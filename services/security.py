@@ -38,11 +38,11 @@ def allow_dev_quick_login() -> bool:
 
 
 def resolve_flask_secret_key() -> str:
-    secret = (os.getenv("FLASK_SECRET_KEY") or "").strip()
+    secret = (os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or "").strip()
     if is_production():
         if not secret or secret == DEFAULT_INSECURE_SECRET:
             raise RuntimeError(
-                "Production'da güçlü bir FLASK_SECRET_KEY zorunludur. "
+                "Production'da güçlü bir FLASK_SECRET_KEY (veya SECRET_KEY) zorunludur. "
                 "Render Environment'ta rastgele bir değer tanımlayın."
             )
         return secret

@@ -372,10 +372,13 @@ def api_mail_folders(user_id):
 @mobile_api_bp.route("/mail/accounts", methods=["GET"])
 @require_api_user
 def api_list_mail_accounts(user_id):
+    from services.oauth_mail import oauth_provider_status
+
     user = find_user_by_id(user_id)
     if not user:
         return jsonify({"error": "Kullanıcı bulunamadı."}), 404
 
+    oauth_status = oauth_provider_status()
     providers = {
         key: {
             "label": preset["label"],
@@ -384,6 +387,11 @@ def api_list_mail_accounts(user_id):
             "smtp_server": preset["smtp_server"],
             "imap_port": preset["imap_port"],
             "smtp_port": preset["smtp_port"],
+            "oauth_provider": preset.get("oauth_provider"),
+            "oauth_configured": bool(
+                preset.get("oauth_provider")
+                and oauth_status.get(preset.get("oauth_provider"), {}).get("configured")
+            ),
         }
         for key, preset in MAIL_PRESETS.items()
     }
@@ -391,6 +399,70 @@ def api_list_mail_accounts(user_id):
         "accounts": list_accounts_for_ui(user),
         "active_account_id": get_active_account_id(user, {}),
         "providers": providers,
+        "oauth_providers": oauth_status,
+    })
+
+
+@mobile_api_bp.route("/mail/oauth/<provider>/start", methods=["GET"])
+@require_api_user
+def api_mail_oauth_start(user_id, provider):
+    from services.oauth_mail import OAUTH_PROVIDERS, oauth_provider_status, save_oauth_state
+
+    provider = (provider or "").strip().lower()
+    if provider not in OAUTH_PROVIDERS:
+        return jsonify({"error": "Geçersiz sağlayıcı."}), 400
+
+    status = oauth_provider_status().get(provider) or {}
+    if not status.get("configured"):
+        return jsonify({
+            "error": f"{status.get('label', provider)} OAuth yapılandırılmadı.",
+            "configured": False,
+        }), 503
+
+    label = (request.args.get("label") or "").strip()
+    from services.public_url import mail_oauth_redirect_uri
+
+    redirect_uri = mail_oauth_redirect_uri(provider, request)
+    try:
+        if provider == "google":
+            from services.google_auth import build_authorization_url
+
+            authorization_url, state, code_verifier = build_authorization_url(
+                action="link_mail",
+                force_account_picker=True,
+                redirect_uri=redirect_uri,
+            )
+        elif provider == "microsoft":
+            from services.microsoft_auth import build_authorization_url
+
+            authorization_url, state, code_verifier = build_authorization_url(
+                redirect_uri=redirect_uri,
+            )
+        else:
+            from services.yahoo_auth import build_authorization_url
+
+            authorization_url, state, code_verifier = build_authorization_url(
+                redirect_uri=redirect_uri,
+            )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    save_oauth_state(
+        state,
+        {
+            "user_id": user_id,
+            "provider": provider,
+            "code_verifier": code_verifier,
+            "label": label,
+            "mobile": True,
+            "redirect_uri": redirect_uri,
+        },
+    )
+    return jsonify({
+        "authorization_url": authorization_url,
+        "provider": provider,
+        "configured": True,
+        "redirect_uri": redirect_uri,
     })
 
 
@@ -483,8 +555,13 @@ def api_mail_list(user_id):
             count=mobile_count,
             settings=settings,
             filter_spam=True,
+            search=search,
         )
-        mailler = filter_mails(mailler, search)
+        from services.gmail_api import is_gmail_api_config
+        if search and not is_gmail_api_config(mail_config):
+            mailler = filter_mails(mailler, search)
+        if meta.get("error"):
+            return jsonify({"error": meta["error"]}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -677,6 +754,7 @@ def api_mail_send_reply(user_id):
     sender = str(_get("sender") or "").strip()
     subject = str(_get("subject") or "").strip()
     final_reply = str(_get("final_reply") or "").strip()
+    to_email = str(_get("to_email") or sender or "").strip()
     cc_email = str(_get("cc_email") or "").strip()
     bcc_email = str(_get("bcc_email") or "").strip()
     html_body = str(_get("html_body") or "").strip()
@@ -686,7 +764,7 @@ def api_mail_send_reply(user_id):
         raw_ids = str(_get("library_file_ids") or "").strip()
         library_ids = [part.strip() for part in raw_ids.split(",") if part.strip()] if raw_ids else []
 
-    if not sender:
+    if not to_email:
         return jsonify({"error": "Alıcı gerekli."}), 400
     if not final_reply:
         return jsonify({"error": "Yanıt metni boş."}), 400
@@ -717,7 +795,7 @@ def api_mail_send_reply(user_id):
 
         send_reply_mail(
             mail_config,
-            to_email=sender,
+            to_email=to_email,
             subject=f"Re: {subject}" if subject else "Re:",
             body=final_reply,
             attachments=attachments or None,
@@ -730,7 +808,7 @@ def api_mail_send_reply(user_id):
 
     return jsonify({
         "success": True,
-        "message": f"{sender} adresine yanıt gönderildi.",
+        "message": f"{to_email} adresine yanıt gönderildi.",
     })
 
 
@@ -772,6 +850,77 @@ def api_mail_ai_compose(user_id):
         "library_attachments": result.get("library_attachments") or [],
         "library_file_ids": result.get("library_file_ids") or [],
     })
+
+
+@mobile_api_bp.route("/mail/save-draft", methods=["POST"])
+@require_api_user
+def api_mail_save_draft(user_id):
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+    mail_config, _active_account, _settings = _mail_context(user, _requested_account_id())
+    if not mail_config:
+        return jsonify({"error": "Mail hesabı bağlı değil."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    form = request.form if request.form else {}
+
+    def _get(key, default=""):
+        if key in payload and payload.get(key) is not None:
+            return payload.get(key)
+        return form.get(key, default)
+
+    to_email = str(_get("to_email") or "").strip()
+    subject = str(_get("subject") or _get("new_subject") or "").strip()
+    body = str(_get("body") or _get("new_body") or _get("final_reply") or "").strip()
+    cc_email = str(_get("cc_email") or "").strip()
+    bcc_email = str(_get("bcc_email") or "").strip()
+    html_body = str(_get("html_body") or "").strip()
+
+    library_ids = payload.get("library_file_ids") if isinstance(payload.get("library_file_ids"), list) else None
+    if library_ids is None:
+        raw_ids = str(_get("library_file_ids") or "").strip()
+        library_ids = [part.strip() for part in raw_ids.split(",") if part.strip()] if raw_ids else []
+
+    try:
+        from services.file_service import parse_uploaded_attachment
+        from services.file_library_service import load_attachments
+        from services.mail_ui import save_outgoing_draft
+        import base64
+
+        attachments = []
+        uploaded = request.files.get("attachment") if request.files else None
+        if uploaded and uploaded.filename:
+            parsed = parse_uploaded_attachment(uploaded)
+            if parsed:
+                attachments.append(parsed)
+        elif isinstance(payload.get("attachment"), dict):
+            att = payload["attachment"]
+            data_b64 = att.get("data_base64") or att.get("data") or ""
+            if data_b64:
+                attachments.append({
+                    "filename": att.get("filename") or "ek",
+                    "mimetype": att.get("mimetype") or "application/octet-stream",
+                    "data": base64.b64decode(data_b64),
+                })
+
+        if library_ids:
+            attachments.extend(load_attachments(user, library_ids))
+
+        saved, message = save_outgoing_draft(
+            mail_config,
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            cc=cc_email,
+            bcc=bcc_email,
+            html_body=html_body,
+            attachments=attachments,
+        )
+        return jsonify({"success": True, "saved": saved, "message": message})
+    except Exception as e:
+        return jsonify({"error": f"Taslak kaydedilirken hata: {str(e)}"}), 500
 
 
 @mobile_api_bp.route("/mail/send-new", methods=["POST"])

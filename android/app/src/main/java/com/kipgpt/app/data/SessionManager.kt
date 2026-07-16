@@ -19,6 +19,12 @@ class SessionManager(private val context: Context) {
         const val DEFAULT_BASE_URL = "https://kip-asistan.onrender.com/api/v1/"
         const val EMULATOR_BASE_URL = "http://10.0.2.2:5001/api/v1/"
         const val RENDER_BASE_URL = "https://kip-asistan.onrender.com/api/v1/"
+        const val LAN_IP_PLACEHOLDER = "10.252.49.1"
+
+        fun lanBaseUrl(ip: String = LAN_IP_PLACEHOLDER): String {
+            val clean = ip.trim().trimEnd('/')
+            return "http://$clean:5001/api/v1/"
+        }
     }
 
     val tokenFlow: Flow<String?> = context.dataStore.data.map { prefs ->

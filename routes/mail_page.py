@@ -53,7 +53,7 @@ def _mail_url(folder="inbox", account_id=None, search=""):
 @mail_bp.route("/mail-version")
 def mail_version():
     return {
-        "ui_version": "gmail-v47",
+        "ui_version": "gmail-v55",
         "layout": "gmail-sidebar",
         "message": "Çoklu mail hesabı desteği",
     }
@@ -173,6 +173,61 @@ def mail_ai_compose():
         return jsonify({"error": f"Taslak oluşturulurken hata: {e}"}), 500
 
 
+@mail_bp.route("/mail/save-draft", methods=["POST"])
+def mail_save_draft():
+    if "user" not in session:
+        return jsonify({"error": "Giriş gerekli."}), 401
+
+    user, mail_config, _active, _accounts, _active_id = _get_user_and_mail()
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 401
+    if not mail_config:
+        return jsonify({"error": "Mail hesabı bağlı değil."}), 400
+
+    data = request.get_json(silent=True) or {}
+    form = request.form if request.form else {}
+
+    def _get(key, default=""):
+        if key in data and data.get(key) is not None:
+            return data.get(key)
+        return form.get(key, default)
+
+    to_email = str(_get("to_email") or "").strip()
+    cc_email = str(_get("cc_email") or "").strip()
+    bcc_email = str(_get("bcc_email") or "").strip()
+    subject = str(_get("subject") or _get("new_subject") or "").strip()
+    body = str(
+        _get("body") or _get("new_body") or _get("final_reply") or ""
+    ).strip()
+    html_body = str(_get("html_body") or "").strip()
+
+    try:
+        from services.mail_ui import _collect_outgoing_attachments, save_outgoing_draft
+
+        attachments = _collect_outgoing_attachments(form, request.files, user)
+        library_ids = data.get("library_file_ids") if isinstance(data.get("library_file_ids"), list) else None
+        if library_ids is None:
+            raw_ids = str(_get("library_file_ids") or "").strip()
+            library_ids = [part.strip() for part in raw_ids.split(",") if part.strip()] if raw_ids else []
+        if library_ids:
+            from services.file_library_service import load_attachments
+            attachments.extend(load_attachments(user, library_ids))
+
+        saved, message = save_outgoing_draft(
+            mail_config,
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            cc=cc_email,
+            bcc=bcc_email,
+            html_body=html_body,
+            attachments=attachments,
+        )
+        return jsonify({"success": True, "saved": saved, "message": message})
+    except Exception as e:
+        return jsonify({"error": f"Taslak kaydedilirken hata: {e}"}), 500
+
+
 @mail_bp.route("/mail", methods=["GET", "POST"])
 def mail_page():
     if "user" not in session:
@@ -191,6 +246,9 @@ def mail_page():
     user = find_user_by_id(session.get("user"))
     if not user:
         return redirect(url_for("auth.login"))
+
+    error = session.pop("mail_flash_error", "") or error
+    success_message = session.pop("mail_flash_success", "") or success_message
 
     requested_account = request.args.get("account") or request.form.get("account_id")
     if requested_account:
@@ -241,13 +299,15 @@ def mail_page():
     if mail_config:
         try:
             mailler, mail_meta = load_folder_mails(
-                folder, mail_config, settings=mail_settings
+                folder, mail_config, settings=mail_settings, search=search
             )
             spam_moved = mail_meta.get("spam_moved", 0)
+            if mail_meta.get("error") and not error:
+                error = mail_meta["error"]
         except Exception as e:
             error = str(e) if not error else error
     elif not mail_accounts:
-        error = error or "Henüz mail hesabı yok. Sol menüden + ile mail hesabı ekleyin."
+        error = error or "Henüz mail hesabı yok. Sol menüden + ile Gmail hesabı ekleyin."
     elif not error:
         error = "Seçili mail hesabına bağlanılamadı. Bilgileri kontrol edin."
 
@@ -266,16 +326,22 @@ def mail_page():
                 folder = "inbox"
                 try:
                     mailler, mail_meta = load_folder_mails(
-                folder, mail_config, settings=mail_settings
-            )
+                        folder, mail_config, settings=mail_settings, search=search
+                    )
                     spam_moved = mail_meta.get("spam_moved", 0)
+                    if mail_meta.get("error") and not error:
+                        error = mail_meta["error"]
                 except Exception as e:
-                    error = str(e)
+                    error = str(e) if not error else error
+
+    # Gmail API zaten sunucu tarafında aradıysa tekrar filtreleme
+    from services.gmail_api import is_gmail_api_config
+    if search and not is_gmail_api_config(mail_config):
+        mailler = filter_mails(mailler, search)
 
     if spam_moved and not success_message:
         success_message = f"{spam_moved} spam mail otomatik olarak spam klasörüne taşındı."
 
-    mailler = filter_mails(mailler, search)
     mail_contacts = get_mail_contacts(user) if user else []
     if user and mailler:
         remember_contacts_from_mails(
@@ -295,6 +361,8 @@ def mail_page():
     calendar_reminders = upcoming_reminders(user) if user else []
     file_library = list_files(user) if user else []
 
+    from services.oauth_mail import oauth_provider_status
+
     return render_template(
         "mail.html",
         title="Mail",
@@ -313,11 +381,12 @@ def mail_page():
         active_account_id=active_account_id,
         active_account=active_account,
         providers=MAIL_PRESETS,
+        oauth_providers=oauth_provider_status(),
         mail_settings=mail_settings,
         sensitivity_presets=SENSITIVITY_PRESETS,
         mail_contacts=mail_contacts,
         calendar_reminders=calendar_reminders,
         file_library=file_library,
         translate_languages=supported_languages(),
-        ui_version="gmail-v47",
+        ui_version="gmail-v55",
     )

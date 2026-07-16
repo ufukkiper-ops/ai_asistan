@@ -10,7 +10,7 @@
 
             <div class="meta-top">
 
-                <span class="meta-from">Alıcı: {{ secilen_mail.sender }}</span>
+                <span class="meta-from">Alıcı: {{ secilen_mail.to_email or secilen_mail.sender }}{% if secilen_mail.reply_all %} · Tümünü yanıtla{% endif %}</span>
 
             </div>
 
@@ -34,13 +34,22 @@
 
         <input type="hidden" name="subject" value="{{ secilen_mail.subject }}">
 
-        <div class="compose-field-row reply-field-row">
-            <input type="text" value="{{ secilen_mail.sender }}" readonly class="compose-readonly">
-            <button type="button" class="compose-cc-toggle" id="reply-cc-toggle">Cc / Bcc</button>
-        </div>
-        <div class="compose-extra-fields" id="reply-extra-fields" hidden>
-            <input type="text" name="cc_email" placeholder="Cc">
-            <input type="text" name="bcc_email" placeholder="Bcc">
+        <div class="recipient-fields">
+            <div class="recipient-row">
+                <label class="recipient-label" for="ai-reply-to">Kime</label>
+                <input type="text" name="to_email" id="ai-reply-to" class="recipient-input" value="{{ secilen_mail.to_email or secilen_mail.sender }}" autocomplete="off" required>
+                <button type="button" class="recipient-toggle-btn" id="reply-cc-toggle" title="Cc / Bcc göster">Cc/Bcc</button>
+            </div>
+            <div class="recipient-extra" id="reply-extra-fields"{% if not (secilen_mail.cc_email or secilen_mail.cc_emails) %} hidden{% endif %}>
+                <div class="recipient-row">
+                    <label class="recipient-label" for="ai-reply-cc">Cc</label>
+                    <input type="text" name="cc_email" id="ai-reply-cc" class="recipient-input" value="{{ secilen_mail.cc_email or ((secilen_mail.cc_emails or [])|join(', ')) }}" placeholder="kopya@ornek.com" autocomplete="off">
+                </div>
+                <div class="recipient-row">
+                    <label class="recipient-label" for="ai-reply-bcc">Bcc</label>
+                    <input type="text" name="bcc_email" id="ai-reply-bcc" class="recipient-input" value="{{ secilen_mail.bcc_email or '' }}" placeholder="gizli@ornek.com" autocomplete="off">
+                </div>
+            </div>
         </div>
 
         <p class="draft-edit-hint">AI taslağını istediğiniz gibi düzenleyebilirsiniz. Tablo/grafik HTML olarak gönderilir; kütüphane ekleri aşağıda görünür.</p>
@@ -120,6 +129,14 @@
             <input type="hidden" name="subject" value="{{ secilen_mail.subject }}">
 
             <input type="hidden" name="content" value="{{ secilen_mail.content }}">
+
+            <input type="hidden" name="to_email" value="{{ secilen_mail.to_email or secilen_mail.sender }}">
+
+            <input type="hidden" name="cc_email" value="{{ secilen_mail.cc_email or ((secilen_mail.cc_emails or [])|join(', ')) }}">
+
+            <input type="hidden" name="bcc_email" value="{{ secilen_mail.bcc_email or '' }}">
+
+            <input type="hidden" name="reply_all" value="{{ '1' if secilen_mail.reply_all else '0' }}">
 
             <input type="hidden" name="current_draft" id="ai-current-draft" value="{{ ai_yaniti }}">
 

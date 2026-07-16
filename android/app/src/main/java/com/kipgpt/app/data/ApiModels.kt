@@ -29,12 +29,27 @@ data class MailProviderPreset(
     val smtp_server: String = "",
     val imap_port: Int = 993,
     val smtp_port: Int = 587,
+    val oauth_provider: String? = null,
+    val oauth_configured: Boolean = false,
+)
+
+data class OAuthProviderStatus(
+    val configured: Boolean = false,
+    val label: String = "",
+    val hint: String = "",
 )
 
 data class MailAccountsResponse(
     val accounts: List<MailAccount> = emptyList(),
     val active_account_id: String? = null,
     val providers: Map<String, MailProviderPreset> = emptyMap(),
+    val oauth_providers: Map<String, OAuthProviderStatus> = emptyMap(),
+)
+
+data class MailOAuthStartResponse(
+    val authorization_url: String = "",
+    val provider: String = "",
+    val configured: Boolean = true,
 )
 
 data class AddMailAccountRequest(
@@ -216,6 +231,23 @@ data class MailSendNewRequest(
 data class MailSendNewResponse(
     val success: Boolean,
     val message: String,
+)
+
+data class MailSaveDraftRequest(
+    val to_email: String = "",
+    val subject: String = "",
+    val body: String = "",
+    val cc_email: String = "",
+    val bcc_email: String = "",
+    val html_body: String = "",
+    val library_file_ids: List<String> = emptyList(),
+    val attachment: OutgoingAttachmentPayload? = null,
+)
+
+data class MailSaveDraftResponse(
+    val success: Boolean = true,
+    val saved: Boolean = false,
+    val message: String = "",
 )
 
 data class MailSummaryRequest(

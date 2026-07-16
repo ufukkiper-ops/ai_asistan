@@ -17,6 +17,8 @@ from mail import (
     recover_all_to_inbox,
     list_folder_uids,
     FOLDER_CANDIDATES,
+    has_draft_content,
+    save_draft_mail,
     send_new_mail,
     send_reply_mail,
 )
@@ -29,6 +31,7 @@ from services.file_library_service import load_attachments
 
 FOLDERS = [
     {"id": "inbox", "label": "Gelen Kutusu", "icon": "inbox"},
+    {"id": "unread", "label": "Okunmamış", "icon": "mark_email_unread"},
     {"id": "starred", "label": "Yıldızlı", "icon": "star"},
     {"id": "sent", "label": "Gönderilmiş", "icon": "send"},
     {"id": "drafts", "label": "Taslaklar", "icon": "draft"},
@@ -39,6 +42,7 @@ FOLDERS = [
 
 FOLDER_LABELS = {
     "inbox": "Gelen Kutusu",
+    "unread": "Okunmamış",
     "starred": "Yıldızlı",
     "sent": "Gönderilmiş Postalar",
     "drafts": "Taslaklar",
@@ -57,9 +61,29 @@ FOLDER_IMAP = {
 }
 
 
-def load_folder_mails(folder, mail_config, count=20, settings=None, filter_spam=True):
+def load_folder_mails(folder, mail_config, count=20, settings=None, filter_spam=True, search=""):
     meta = {}
     settings = settings or {}
+
+    from services.gmail_api import GmailApiError, is_gmail_api_config, list_mails as gmail_list_mails
+
+    if is_gmail_api_config(mail_config):
+        try:
+            fetch_count = min(count, settings.get("inbox_fetch_count", count)) if folder == "inbox" else count
+            mailler = gmail_list_mails(mail_config, folder=folder or "inbox", count=fetch_count, search=search)
+            if folder in ("inbox", "sent", "spam", "trash", "archive", "starred", "unread"):
+                mailler = group_mails_by_thread(mailler)
+            return mailler, meta
+        except GmailApiError as exc:
+            meta["error"] = str(exc)
+            return [], meta
+        except Exception as exc:
+            meta["error"] = f"Gmail API hatası: {exc}"
+            return [], meta
+
+    if folder == "unread":
+        # IMAP hesaplarında okunmamış: gelen kutusundan istemci tarafı filtre
+        folder = "inbox"
 
     if folder == "inbox":
         fetch_count = min(count, settings.get("inbox_fetch_count", count))
@@ -79,20 +103,58 @@ def load_folder_mails(folder, mail_config, count=20, settings=None, filter_spam=
         "trash": get_trash,
         "drafts": get_drafts,
         "archive": get_archive,
-        "starred": lambda cfg, c=count: [],
+        "starred": lambda cfg, c=count: get_starred_imap(cfg, c),
     }
     loader = loaders.get(folder, get_inbox)
     result = loader(mail_config, count)
     if isinstance(result, tuple):
         result = result[0]
 
-    if folder in ("inbox", "sent", "spam", "trash", "archive"):
+    if folder in ("inbox", "sent", "spam", "trash", "archive", "starred"):
         result = group_mails_by_thread(result)
 
     return result, meta
 
 
+def get_starred_imap(mail_config, count=20):
+    """IMAP FLAGGED araması (Outlook/Yahoo vb.)."""
+    try:
+        from mail import connect_mail
+
+        mail = connect_mail(mail_config, "INBOX")
+        try:
+            status, messages = mail.uid("search", None, "FLAGGED")
+            if status != "OK" or not messages or not messages[0]:
+                return []
+            ids = messages[0].split()
+            result = []
+            for mail_id in reversed(ids[-count:]):
+                try:
+                    thread_id, raw = _fetch_mail_by_uid(mail, mail_id, mail_config)
+                    if not raw:
+                        continue
+                    parsed = parse_message(raw, thread_id=thread_id)
+                    parsed["id"] = mail_id.decode()
+                    parsed["starred"] = True
+                    result.append(parsed)
+                except Exception:
+                    continue
+            return result
+        finally:
+            mail.logout()
+    except Exception:
+        return []
+
+
 def load_single_mail(folder, mail_config, mail_id):
+    from services.gmail_api import GmailApiError, get_mail as gmail_get_mail, is_gmail_api_config
+
+    if is_gmail_api_config(mail_config):
+        try:
+            return gmail_get_mail(mail_config, str(mail_id))
+        except GmailApiError as exc:
+            raise RuntimeError(str(exc)) from exc
+
     imap_folder = get_imap_folder_name(folder, mail_config)
     mail_conn = connect_mail(mail_config, imap_folder)
     try:
@@ -365,6 +427,24 @@ def _collect_outgoing_attachments(form, files, user):
     return attachments
 
 
+def save_outgoing_draft(mail_config, *, to_email="", subject="", body="", cc="", bcc="", html_body="", attachments=None):
+    """Boş değilse IMAP taslak kaydeder. Dönüş: (saved: bool, message: str)."""
+    attachments = attachments or []
+    if not has_draft_content(to_email, subject, body, cc, bcc, html_body, attachments):
+        return False, "Kaydedilecek içerik yok."
+    save_draft_mail(
+        mail_config,
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        attachments=attachments or None,
+        cc=cc,
+        bcc=bcc,
+        html_body=html_body or None,
+    )
+    return True, "Taslak kaydedildi."
+
+
 def handle_mail_action(form, mail_config, files=None, user=None):
     islem = form.get("islem")
     sender = form.get("sender", "")
@@ -394,11 +474,21 @@ def handle_mail_action(form, mail_config, files=None, user=None):
             )
             ai_yaniti = result["body"]
             ai_meta = result
+            reply_to = (form.get("to_email") or sender or "").strip()
+            reply_cc = (form.get("cc_email") or "").strip()
+            reply_bcc = (form.get("bcc_email") or "").strip()
+            reply_all = (form.get("reply_all") or "").strip() in {"1", "true", "on", "yes"}
             secilen_mail = {
                 "id": mail_id,
                 "sender": sender,
                 "subject": subject,
                 "content": content,
+                "to_email": reply_to,
+                "cc_email": reply_cc,
+                "bcc_email": reply_bcc,
+                "reply_all": reply_all,
+                "to_emails": [p.strip() for p in reply_to.split(",") if p.strip()],
+                "cc_emails": [p.strip() for p in reply_cc.split(",") if p.strip()],
             }
         except Exception as e:
             error = f"Yanıt oluşturulurken hata: {str(e)}"
@@ -417,11 +507,21 @@ def handle_mail_action(form, mail_config, files=None, user=None):
             )
             ai_yaniti = result["body"]
             ai_meta = result
+            reply_to = (form.get("to_email") or sender or "").strip()
+            reply_cc = (form.get("cc_email") or "").strip()
+            reply_bcc = (form.get("bcc_email") or "").strip()
+            reply_all = (form.get("reply_all") or "").strip() in {"1", "true", "on", "yes"}
             secilen_mail = {
                 "id": mail_id,
                 "sender": sender,
                 "subject": subject,
                 "content": content,
+                "to_email": reply_to,
+                "cc_email": reply_cc,
+                "bcc_email": reply_bcc,
+                "reply_all": reply_all,
+                "to_emails": [p.strip() for p in reply_to.split(",") if p.strip()],
+                "cc_emails": [p.strip() for p in reply_cc.split(",") if p.strip()],
             }
         except Exception as e:
             error = f"Taslak yeniden düzenlenirken hata: {str(e)}"
@@ -495,13 +595,16 @@ def handle_mail_action(form, mail_config, files=None, user=None):
     elif islem == "gonder":
         final_reply = form.get("final_reply", "")
         html_body = (form.get("html_body") or "").strip()
+        to_email = (form.get("to_email") or sender or "").strip()
         cc_email = form.get("cc_email", "").strip()
         bcc_email = form.get("bcc_email", "").strip()
         try:
+            if not to_email:
+                raise ValueError("Alıcı e-posta adresi gerekli.")
             attachments = _collect_outgoing_attachments(form, files, user)
             send_reply_mail(
                 mail_config,
-                to_email=sender,
+                to_email=to_email,
                 subject=f"Re: {subject}",
                 body=final_reply,
                 attachments=attachments or None,
@@ -512,12 +615,12 @@ def handle_mail_action(form, mail_config, files=None, user=None):
             if user:
                 remember_contacts_from_fields(
                     user,
-                    to_email=sender,
+                    to_email=to_email,
                     cc_email=cc_email,
                     bcc_email=bcc_email,
                     own_email=mail_config.get("email"),
                 )
-            success_message = f"{sender} adresine yanıt başarıyla postalandı!"
+            success_message = f"{to_email} adresine yanıt başarıyla postalandı!"
             if attachments:
                 names = ", ".join(a["filename"] for a in attachments)
                 success_message += f" (Ek: {names})"
@@ -560,6 +663,34 @@ def handle_mail_action(form, mail_config, files=None, user=None):
         except Exception as e:
             error = f"E-posta gönderilirken hata oluştu: {str(e)}"
 
+    elif islem == "taslak_kaydet":
+        to_email = form.get("to_email", "").strip()
+        cc_email = form.get("cc_email", "").strip()
+        bcc_email = form.get("bcc_email", "").strip()
+        new_subject = (form.get("new_subject") or form.get("subject") or "").strip()
+        new_body = (form.get("new_body") or form.get("final_reply") or form.get("body") or "").strip()
+        html_body = (form.get("html_body") or "").strip()
+        try:
+            attachments = _collect_outgoing_attachments(form, files, user)
+            if not has_draft_content(
+                to_email, new_subject, new_body, cc_email, bcc_email, html_body, attachments
+            ):
+                success_message = ""
+            else:
+                save_draft_mail(
+                    mail_config,
+                    to_email=to_email,
+                    subject=new_subject,
+                    body=new_body,
+                    attachments=attachments or None,
+                    cc=cc_email,
+                    bcc=bcc_email,
+                    html_body=html_body or None,
+                )
+                success_message = "Taslak kaydedildi."
+        except Exception as e:
+            error = f"Taslak kaydedilirken hata oluştu: {str(e)}"
+
     return error, success_message, ai_yaniti, secilen_mail, ai_meta
 
 
@@ -573,5 +704,17 @@ def get_imap_folder_name(folder, mail_config=None):
 
 
 def download_mail_attachment(mail_config, folder, mail_id, index):
+    from services.gmail_api import (
+        GmailApiError,
+        download_attachment as gmail_download_attachment,
+        is_gmail_api_config,
+    )
+
+    if is_gmail_api_config(mail_config):
+        try:
+            return gmail_download_attachment(mail_config, str(mail_id), int(index))
+        except GmailApiError as exc:
+            raise RuntimeError(str(exc)) from exc
+
     imap_folder = get_imap_folder_name(folder, mail_config)
     return fetch_attachment(mail_config, imap_folder, mail_id, index)

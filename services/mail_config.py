@@ -1,4 +1,3 @@
-from services.google_auth import get_fresh_access_token
 from services.security import validate_mail_host, validate_mail_port
 
 MAIL_PRESETS = {
@@ -8,7 +7,8 @@ MAIL_PRESETS = {
         "imap_port": 993,
         "smtp_server": "smtp.gmail.com",
         "smtp_port": 587,
-        "hint": "Gmail'de 2 adımlı doğrulama açık olmalı ve Uygulama Şifresi kullanın.",
+        "hint": "Google ile Bağla önerilir (şifresiz). Alternatif: Uygulama Şifresi.",
+        "oauth_provider": "google",
     },
     "outlook": {
         "label": "Outlook / Hotmail",
@@ -16,7 +16,8 @@ MAIL_PRESETS = {
         "imap_port": 993,
         "smtp_server": "smtp.office365.com",
         "smtp_port": 587,
-        "hint": "Microsoft hesabınızın e-posta ve şifresini veya uygulama şifresini kullanın.",
+        "hint": "Microsoft ile Bağla önerilir (şifresiz). Alternatif: uygulama şifresi.",
+        "oauth_provider": "microsoft",
     },
     "yahoo": {
         "label": "Yahoo Mail",
@@ -24,7 +25,8 @@ MAIL_PRESETS = {
         "imap_port": 993,
         "smtp_server": "smtp.mail.yahoo.com",
         "smtp_port": 587,
-        "hint": "Yahoo hesabınız için uygulama şifresi oluşturmanız gerekebilir.",
+        "hint": "Yahoo ile Bağla önerilir (şifresiz). Alternatif: uygulama şifresi.",
+        "oauth_provider": "yahoo",
     },
     "custom": {
         "label": "Diğer (Manuel IMAP/SMTP)",
@@ -33,7 +35,14 @@ MAIL_PRESETS = {
         "smtp_server": "",
         "smtp_port": 587,
         "hint": "IMAP ve SMTP sunucu bilgilerinizi kendiniz girin.",
+        "oauth_provider": None,
     },
+}
+
+OAUTH_PROVIDER_MAP = {
+    "google_oauth": ("gmail", "google"),
+    "microsoft_oauth": ("outlook", "microsoft"),
+    "yahoo_oauth": ("yahoo", "yahoo"),
 }
 
 
@@ -47,7 +56,17 @@ def resolve_mail_config_from_account(account, owner_user_id=None):
 
     provider = account.get("provider", "custom")
 
-    if provider == "google_oauth":
+    if provider in OAUTH_PROVIDER_MAP:
+        preset_key, _ = OAUTH_PROVIDER_MAP[provider]
+        preset = MAIL_PRESETS[preset_key]
+
+        if provider == "google_oauth":
+            from services.google_auth import get_fresh_access_token
+        elif provider == "microsoft_oauth":
+            from services.microsoft_auth import get_fresh_access_token
+        else:
+            from services.yahoo_auth import get_fresh_access_token
+
         access_token, updated = get_fresh_access_token(account)
         if not access_token:
             return None
@@ -55,18 +74,26 @@ def resolve_mail_config_from_account(account, owner_user_id=None):
         if updated and owner_user_id and account.get("id"):
             from services.mail_accounts import update_account_oauth_tokens
             update_account_oauth_tokens(owner_user_id, account["id"], updated)
+            account = {**account, **updated}
 
-        preset = MAIL_PRESETS["gmail"]
-        return {
+        config = {
             "email": email,
             "auth_type": "oauth",
+            "provider": provider,
             "access_token": access_token,
+            "refresh_token": account.get("refresh_token") or (updated or {}).get("refresh_token") or "",
+            "token_expiry": account.get("token_expiry") or (updated or {}).get("token_expiry"),
+            "scopes": account.get("scopes") or (updated or {}).get("scopes") or [],
             "imap_server": preset["imap_server"],
             "imap_port": preset["imap_port"],
             "smtp_server": preset["smtp_server"],
             "smtp_port": preset["smtp_port"],
             "account_id": account.get("id"),
+            "owner_user_id": owner_user_id,
         }
+        if provider == "google_oauth":
+            config["mail_backend"] = "gmail_api"
+        return config
 
     password = account.get("password", "").strip()
     if not password:

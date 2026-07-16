@@ -51,11 +51,27 @@ button{
     padding:20px;
 }
 
-.sidebar h2{
+.sidebar-brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:25px;
+}
+
+.sidebar-brand-icon{
+    width:36px;
+    height:36px;
+    border-radius:10px;
+    object-fit:cover;
+    flex-shrink:0;
+}
+
+.sidebar h2,
+.sidebar-brand h2{
     font-size:28px;
     font-weight:700;
     color:#111827;
-    margin-bottom:25px;
+    margin:0;
 }
 
 .user-box{
@@ -486,17 +502,66 @@ button{
     align-items:center;
     justify-content:center;
     padding:16px;
+    background:
+        radial-gradient(900px 420px at 50% 0%, rgba(34,211,238,.12), transparent 55%),
+        radial-gradient(700px 380px at 80% 100%, rgba(124,58,237,.14), transparent 50%),
+        linear-gradient(180deg, #0b0e14 0%, #121826 55%, #0b0e14 100%);
+}
+
+.auth-brand{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    margin:-8px 0 8px;
+}
+
+.auth-brand-logo{
+    width:min(280px, 72vw);
+    height:auto;
+    display:block;
+    object-fit:contain;
+    border-radius:16px;
+}
+
+.auth-brand-icon{
+    width:72px;
+    height:72px;
+    border-radius:18px;
+    object-fit:cover;
+    box-shadow:0 8px 22px rgba(34,211,238,.22);
+}
+
+.auth-brand-text{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:2px;
+}
+
+.auth-brand-name{
+    font-size:28px;
+    font-weight:700;
+    letter-spacing:-0.03em;
+    color:#1a73e8;
+    line-height:1.1;
+}
+
+.auth-brand-tag{
+    font-size:13px;
+    color:#5f6368;
 }
 
 .card{
     width:100%;
     max-width:420px;
     margin:0 auto;
-    background:white;
-    border:1px solid #e5e7eb;
+    background:rgba(18, 22, 34, 0.92);
+    border:1px solid rgba(148,163,184,.18);
     border-radius:20px;
     padding:24px;
-    box-shadow:0 10px 35px rgba(0,0,0,.08);
+    box-shadow:0 16px 48px rgba(0,0,0,.45);
+    color:#e5e7eb;
 }
 
 .card-register{
@@ -520,6 +585,55 @@ button{
     padding:0 12px;
     margin-bottom:10px;
     font-size:14px;
+}
+
+body.auth-page .card h2{
+    color:#f3f4f6;
+}
+
+body.auth-page .card input,
+body.auth-page .card select{
+    background:#0f1420;
+    border-color:rgba(148,163,184,.28);
+    color:#f3f4f6;
+}
+
+body.auth-page .card input::placeholder{
+    color:#94a3b8;
+}
+
+body.auth-page .register-lead,
+body.auth-page .register-note,
+body.auth-page .provider-hint,
+body.auth-page .setup-intro{
+    color:#94a3b8;
+}
+
+body.auth-page .auth-footer-link a{
+    color:#67e8f9;
+}
+
+body.auth-page .auth-divider{
+    color:#64748b;
+}
+
+body.auth-page .auth-divider::before,
+body.auth-page .auth-divider::after{
+    background:rgba(148,163,184,.25);
+}
+
+body.auth-page .btn-google,
+body.auth-page .btn-google-primary{
+    background:#fff;
+    color:#111827;
+}
+
+body.auth-page .field-label{
+    color:#cbd5e1;
+}
+
+body.auth-page .setup-code{
+    color:#a5f3fc;
 }
 
 .register-tabs{

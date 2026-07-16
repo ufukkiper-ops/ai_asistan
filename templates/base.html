@@ -10,10 +10,14 @@
 
     <title>{{ title if title else "KipGPT" }}</title>
 
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}" sizes="32x32">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/kipgpt-icon-192.png') }}">
+
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
 
     <link rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v=16">
+      href="{{ url_for('static', filename='css/style.css') }}?v=18">
 
     {% block head %}{% endblock %}
 

@@ -51,13 +51,19 @@
     const aiSubject = document.getElementById("ai-subject");
     const aiContent = document.getElementById("ai-content");
     const replyBtn = document.getElementById("reply-btn");
+    const replyAllBtn = document.getElementById("reply-all-btn");
     const aiReplyBtn = document.getElementById("ai-reply-btn");
     const manualReplyPanel = document.getElementById("manual-reply-panel");
+    const manualReplyTitle = document.getElementById("manual-reply-title");
     const manualReplySender = document.getElementById("manual-reply-sender");
     const manualReplySubject = document.getElementById("manual-reply-subject");
     const manualReplyTo = document.getElementById("manual-reply-to");
+    const manualReplyCc = document.getElementById("manual-reply-cc");
+    const manualReplyBcc = document.getElementById("manual-reply-bcc");
     const manualReplyBody = document.getElementById("manual-reply-body");
     const manualReplyCancel = document.getElementById("manual-reply-cancel");
+    const ownEmail = (document.body.dataset.ownEmail || "").trim().toLowerCase();
+    let currentMailForReply = null;
     const selectAll = document.getElementById("select-all");
     const sidebar = document.getElementById("gmail-sidebar");
     const menuBtn = document.querySelector(".menu-btn");
@@ -432,6 +438,7 @@
         if (readerContent) readerContent.hidden = true;
         if (aiDraftView) aiDraftView.hidden = false;
         if (gmailReader) gmailReader.classList.add("reader-active");
+        document.body.classList.add("mail-reader-open");
     }
 
     function isDraftMail(mail) {
@@ -450,6 +457,7 @@
 
     function closeMail() {
         if (gmailReader) gmailReader.classList.remove("reader-active");
+        document.body.classList.remove("mail-reader-open");
         document.querySelectorAll(".gmail-row.selected").forEach(function (row) {
             row.classList.remove("selected");
         });
@@ -514,6 +522,7 @@
         hideDraftView();
 
         if (gmailReader) gmailReader.classList.add("reader-active");
+        document.body.classList.add("mail-reader-open");
         if (readerEmpty) readerEmpty.hidden = true;
 
         if (readerContent) {
@@ -546,9 +555,27 @@
             if (manualReplyPanel) manualReplyPanel.hidden = true;
             if (manualReplySender) manualReplySender.value = mail.sender || "";
             if (manualReplySubject) manualReplySubject.value = mail.subject || "";
-            currentSenderDisplay = mail.sender_display || mail.sender || "";
-            if (manualReplyTo) manualReplyTo.value = currentSenderDisplay;
+            const replySource = (mail.thread_messages && mail.thread_messages[0])
+                ? Object.assign({}, mail.thread_messages[0], {
+                    subject: mail.subject || mail.thread_messages[0].subject,
+                    sender: mail.thread_messages[0].sender || mail.sender,
+                    sender_display: mail.thread_messages[0].sender_display || mail.sender_display,
+                })
+                : mail;
+            currentMailForReply = replySource;
+            fillManualReplyFields(replySource, false);
             if (manualReplyBody) manualReplyBody.value = "";
+
+            const readerTo = document.getElementById("reader-to");
+            if (readerTo) {
+                const toText = (replySource.to || (replySource.to_emails || []).join(", ") || "").trim();
+                const ccText = (replySource.cc || (replySource.cc_emails || []).join(", ") || "").trim();
+                let metaLine = toText ? ("Kime: " + toText) : "Kime: ben";
+                if (ccText) {
+                    metaLine += " · Cc: " + ccText;
+                }
+                readerTo.textContent = metaLine;
+            }
 
             if (readerFrom && mail.thread_count > 1) {
                 readerFrom.textContent = formatThreadParticipants(mail) +
@@ -601,33 +628,140 @@
         if (manualReplyPanel) manualReplyPanel.hidden = true;
     }
 
-    let currentSenderDisplay = "";
-
-    function showManualReplyPanel() {
-        hideReplyPanels();
-        if (!manualReplyPanel) return;
-        manualReplyPanel.hidden = false;
-        if (manualReplySender && aiSender) {
-            manualReplySender.value = aiSender.value || "";
+    function extractEmails(value) {
+        if (!value) return [];
+        if (Array.isArray(value)) {
+            return value
+                .map(function (item) { return String(item || "").trim().toLowerCase(); })
+                .filter(Boolean);
         }
-        if (manualReplySubject && aiSubject) {
-            manualReplySubject.value = aiSubject.value || "";
+        const text = String(value);
+        const found = text.match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+        const seen = new Set();
+        const emails = [];
+        found.forEach(function (addr) {
+            const lower = addr.toLowerCase();
+            if (!seen.has(lower)) {
+                seen.add(lower);
+                emails.push(lower);
+            }
+        });
+        return emails;
+    }
+
+    function uniqueEmails(list) {
+        const seen = new Set();
+        const out = [];
+        (list || []).forEach(function (addr) {
+            const lower = String(addr || "").trim().toLowerCase();
+            if (!lower || seen.has(lower) || (ownEmail && lower === ownEmail)) {
+                return;
+            }
+            seen.add(lower);
+            out.push(lower);
+        });
+        return out;
+    }
+
+    function buildReplyRecipients(mail, replyAll) {
+        const source = mail || {};
+        const sender = extractEmails(source.sender || source.sender_display)[0] || "";
+        const toList = extractEmails(source.to_emails && source.to_emails.length ? source.to_emails : source.to);
+        const ccList = extractEmails(source.cc_emails && source.cc_emails.length ? source.cc_emails : source.cc);
+
+        if (!replyAll) {
+            return {
+                to: sender ? [sender] : [],
+                cc: [],
+                bcc: [],
+            };
+        }
+
+        const to = uniqueEmails([sender].concat(toList));
+        const toSet = new Set(to);
+        const cc = uniqueEmails(ccList).filter(function (addr) {
+            return !toSet.has(addr);
+        });
+        return { to: to, cc: cc, bcc: [] };
+    }
+
+    function setRecipientExtraVisible(extraEl, toggleBtn, visible) {
+        if (!extraEl) return;
+        extraEl.hidden = !visible;
+        if (toggleBtn) {
+            toggleBtn.classList.toggle("active", visible);
+        }
+    }
+
+    let currentReplyAllMode = false;
+
+    function syncAiRecipientFields() {
+        const aiTo = document.getElementById("ai-to-email");
+        const aiCc = document.getElementById("ai-cc-email");
+        const aiBcc = document.getElementById("ai-bcc-email");
+        const aiReplyAll = document.getElementById("ai-reply-all");
+        if (aiTo && manualReplyTo) aiTo.value = manualReplyTo.value.trim();
+        if (aiCc && manualReplyCc) aiCc.value = manualReplyCc.value.trim();
+        if (aiBcc && manualReplyBcc) aiBcc.value = manualReplyBcc.value.trim();
+        if (aiReplyAll) aiReplyAll.value = currentReplyAllMode ? "1" : "0";
+    }
+
+    function fillManualReplyFields(mail, replyAll) {
+        const recipients = buildReplyRecipients(mail, replyAll);
+        currentReplyAllMode = !!replyAll;
+        if (manualReplySender) {
+            manualReplySender.value = extractEmails(mail?.sender || mail?.sender_display)[0] || mail?.sender || "";
+        }
+        if (manualReplySubject) {
+            manualReplySubject.value = mail?.subject || "";
         }
         if (manualReplyTo) {
-            manualReplyTo.value = currentSenderDisplay || aiSender?.value || "";
+            manualReplyTo.value = recipients.to.join(", ");
         }
+        if (manualReplyCc) {
+            manualReplyCc.value = recipients.cc.join(", ");
+        }
+        if (manualReplyBcc) {
+            manualReplyBcc.value = "";
+        }
+        const extra = document.getElementById("manual-reply-extra-fields");
+        const toggle = document.getElementById("manual-reply-cc-toggle");
+        const showExtra = replyAll || recipients.cc.length > 0;
+        setRecipientExtraVisible(extra, toggle, showExtra);
+        if (manualReplyTitle) {
+            manualReplyTitle.textContent = replyAll ? "Tümünü Yanıtla" : "Yanıtla";
+        }
+        const headerIcon = manualReplyPanel?.querySelector(".reply-panel-header .material-icons-outlined");
+        if (headerIcon) {
+            headerIcon.textContent = replyAll ? "reply_all" : "reply";
+        }
+        syncAiRecipientFields();
+    }
+
+    function showManualReplyPanel(replyAll) {
+        hideReplyPanels();
+        if (!manualReplyPanel) return;
+        const mail = currentMailForReply || {};
+        fillManualReplyFields(mail, !!replyAll);
+        manualReplyPanel.hidden = false;
+        if (aiPanel) aiPanel.hidden = true;
         manualReplyPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        if (manualReplyBody) manualReplyBody.focus();
+        const aiInstruction = document.getElementById("ai-user-instruction");
+        if (aiInstruction) {
+            aiInstruction.focus();
+        } else if (manualReplyBody) {
+            manualReplyBody.focus();
+        }
     }
 
     function showAiReplyPanel() {
-        hideReplyPanels();
-        if (!aiPanel) return;
-        aiPanel.hidden = false;
-        aiPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        const textarea = document.getElementById("ai-user-instruction") ||
-            aiPanel.querySelector('textarea[name="user_instruction"]');
-        if (textarea) textarea.focus();
+        // AI artık yanıt panelinin içinde; varsayılan olarak yanıtla aç
+        showManualReplyPanel(false);
+        const aiInstruction = document.getElementById("ai-user-instruction");
+        if (aiInstruction) {
+            aiInstruction.focus();
+            aiInstruction.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
     }
 
     const AI_THINKING_LABELS = ["Düşünüyor", "Hazırlıyor"];
@@ -674,26 +808,108 @@
         document.getElementById("ai-revise-thinking"),
     );
 
+    const aiGenerateForm = document.getElementById("ai-generate-form");
+    if (aiGenerateForm) {
+        aiGenerateForm.addEventListener("submit", function () {
+            syncAiRecipientFields();
+        });
+    }
+
+    ["manual-reply-to", "manual-reply-cc", "manual-reply-bcc"].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener("change", syncAiRecipientFields);
+            el.addEventListener("input", syncAiRecipientFields);
+        }
+    });
+
     if (replyBtn) {
-        replyBtn.addEventListener("click", showManualReplyPanel);
+        replyBtn.addEventListener("click", function () {
+            showManualReplyPanel(false);
+        });
+    }
+
+    if (replyAllBtn) {
+        replyAllBtn.addEventListener("click", function () {
+            showManualReplyPanel(true);
+        });
     }
 
     if (aiReplyBtn) {
-        aiReplyBtn.addEventListener("click", showAiReplyPanel);
+        aiReplyBtn.addEventListener("click", function () {
+            // AI ile yanıtla da tüm alıcıları korumak için reply-all aç
+            const mail = currentMailForReply || {};
+            const hasOthers = buildReplyRecipients(mail, true).cc.length > 0
+                || buildReplyRecipients(mail, true).to.length > 1;
+            showManualReplyPanel(hasOthers);
+            const aiInstruction = document.getElementById("ai-user-instruction");
+            if (aiInstruction) aiInstruction.focus();
+        });
     }
 
     if (manualReplyCancel) {
-        manualReplyCancel.addEventListener("click", function () {
+        manualReplyCancel.addEventListener("click", async function () {
+            const to = (manualReplyTo?.value || "").trim();
+            const cc = (manualReplyCc?.value || "").trim();
+            const bcc = (manualReplyBcc?.value || "").trim();
+            const subject = (manualReplySubject?.value || "").trim();
+            const body = (manualReplyBody?.value || "").trim();
+            const aiDraft = (document.getElementById("ai-draft-editor")?.value || "").trim();
+            const draftBody = body || aiDraft;
+            if (draftBody || to || cc || bcc) {
+                try {
+                    await fetch("/mail/save-draft", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            to_email: to,
+                            cc_email: cc,
+                            bcc_email: bcc,
+                            subject: subject,
+                            body: draftBody,
+                        }),
+                    });
+                } catch (_err) {
+                    // kapatmaya engel olma
+                }
+            }
             if (manualReplyPanel) manualReplyPanel.hidden = true;
             if (manualReplyBody) manualReplyBody.value = "";
+            if (manualReplyCc) manualReplyCc.value = "";
+            if (manualReplyBcc) manualReplyBcc.value = "";
         });
     }
 
     const manualReplyCcToggle = document.getElementById("manual-reply-cc-toggle");
     const manualReplyExtraFields = document.getElementById("manual-reply-extra-fields");
-    bindCcToggle(manualReplyCcToggle, manualReplyExtraFields);
+    if (manualReplyCcToggle && manualReplyExtraFields) {
+        manualReplyCcToggle.addEventListener("click", function () {
+            const willShow = manualReplyExtraFields.hidden;
+            setRecipientExtraVisible(manualReplyExtraFields, manualReplyCcToggle, willShow);
+        });
+    }
 
     const aiReviseForm = document.getElementById("ai-revise-form");
+    if (aiReviseForm) {
+        aiReviseForm.addEventListener("submit", function () {
+            const toField = document.getElementById("ai-reply-to");
+            const ccField = document.getElementById("ai-reply-cc");
+            const bccField = document.getElementById("ai-reply-bcc");
+            const setHidden = function (name, value) {
+                let input = aiReviseForm.querySelector('input[name="' + name + '"]');
+                if (!input) {
+                    input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = name;
+                    aiReviseForm.appendChild(input);
+                }
+                input.value = value || "";
+            };
+            if (toField) setHidden("to_email", toField.value.trim());
+            if (ccField) setHidden("cc_email", ccField.value.trim());
+            if (bccField) setHidden("bcc_email", bccField.value.trim());
+        });
+    }
     const aiDraftEditor = document.getElementById("ai-draft-editor");
     const aiCurrentDraft = document.getElementById("ai-current-draft");
     if (aiReviseForm && aiDraftEditor && aiCurrentDraft) {
@@ -739,25 +955,178 @@
     }
 
     if (menuBtn && sidebar) {
+        const backdrop = document.getElementById("sidebar-backdrop");
+        const mobileComposeFab = document.getElementById("mobile-compose-fab");
+
+        function setSidebarOpen(open) {
+            sidebar.classList.toggle("open", open);
+            if (backdrop) {
+                backdrop.hidden = !open;
+                backdrop.classList.toggle("is-visible", open);
+            }
+            document.body.classList.toggle("sidebar-open", open);
+        }
+
         menuBtn.addEventListener("click", function () {
-            sidebar.classList.toggle("open");
+            setSidebarOpen(!sidebar.classList.contains("open"));
         });
+
+        if (backdrop) {
+            backdrop.addEventListener("click", function () {
+                setSidebarOpen(false);
+            });
+        }
+
+        sidebar.querySelectorAll("a.folder-link, a.account-item").forEach(function (link) {
+            link.addEventListener("click", function () {
+                setSidebarOpen(false);
+            });
+        });
+
+        if (mobileComposeFab && composeOverlay) {
+            mobileComposeFab.addEventListener("click", function () {
+                setSidebarOpen(false);
+                if (composeBtn) {
+                    composeBtn.click();
+                } else {
+                    composeOverlay.hidden = false;
+                }
+            });
+        }
+    } else {
+        const mobileComposeFab = document.getElementById("mobile-compose-fab");
+        if (mobileComposeFab && composeBtn) {
+            mobileComposeFab.addEventListener("click", function () {
+                composeBtn.click();
+            });
+        }
+    }
+
+    function composeHasDraftContent() {
+        const to = (document.getElementById("compose-to-email")?.value || "").trim();
+        const cc = (document.getElementById("compose-cc-email")?.value || "").trim();
+        const bcc = (document.getElementById("compose-bcc-email")?.value || "").trim();
+        const subject = (document.getElementById("compose-subject")?.value || "").trim();
+        const body = (document.getElementById("compose-body")?.value || "").trim();
+        const html = (document.getElementById("compose-html-body")?.value || "").trim();
+        const libraryIds = document.querySelectorAll("#compose-library-ids input[name='library_file_ids']");
+        return Boolean(to || cc || bcc || subject || body || html || libraryIds.length);
+    }
+
+    function collectComposeDraftPayload() {
+        const libraryIds = Array.from(
+            document.querySelectorAll("#compose-library-ids input[name='library_file_ids']")
+        ).map((el) => el.value).filter(Boolean);
+        return {
+            to_email: (document.getElementById("compose-to-email")?.value || "").trim(),
+            cc_email: (document.getElementById("compose-cc-email")?.value || "").trim(),
+            bcc_email: (document.getElementById("compose-bcc-email")?.value || "").trim(),
+            subject: (document.getElementById("compose-subject")?.value || "").trim(),
+            body: (document.getElementById("compose-body")?.value || "").trim(),
+            html_body: (document.getElementById("compose-html-body")?.value || "").trim(),
+            library_file_ids: libraryIds,
+        };
+    }
+
+    function resetComposeForm() {
+        const form = document.getElementById("compose-form");
+        if (form) form.reset();
+        const htmlBody = document.getElementById("compose-html-body");
+        if (htmlBody) htmlBody.value = "";
+        if (window.KipMailTools && typeof KipMailTools.clearComposeLibraryAttachments === "function") {
+            KipMailTools.clearComposeLibraryAttachments();
+        }
+        const preview = document.getElementById("compose-file-preview");
+        if (preview) {
+            preview.hidden = true;
+            preview.innerHTML = "";
+        }
+    }
+
+    async function saveComposeDraft({ closeAfter = false, silentEmpty = true } = {}) {
+        if (!composeHasDraftContent()) {
+            if (closeAfter) {
+                resetComposeForm();
+                if (composeOverlay) composeOverlay.hidden = true;
+            }
+            return { saved: false };
+        }
+        try {
+            const response = await fetch("/mail/save-draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(collectComposeDraftPayload()),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || "Taslak kaydedilemedi");
+            }
+            if (data.saved && !silentEmpty) {
+                // optional UI hint via existing success banner area
+            }
+            if (closeAfter) {
+                resetComposeForm();
+                if (composeOverlay) composeOverlay.hidden = true;
+            }
+            return data;
+        } catch (err) {
+            if (closeAfter) {
+                const discard = window.confirm(
+                    (err && err.message ? err.message + "\n\n" : "") +
+                    "Taslak kaydedilemedi. Yine de kapatılsın mı? Yazılanlar silinir."
+                );
+                if (discard) {
+                    resetComposeForm();
+                    if (composeOverlay) composeOverlay.hidden = true;
+                }
+            } else {
+                window.alert(err.message || "Taslak kaydedilemedi");
+            }
+            return { saved: false, error: err.message };
+        }
+    }
+
+    async function closeComposeWithDraftSave() {
+        await saveComposeDraft({ closeAfter: true, silentEmpty: true });
     }
 
     if (composeClose && composeOverlay) {
         composeClose.addEventListener("click", function () {
-            if (window.KipMailTools && typeof KipMailTools.clearComposeLibraryAttachments === "function") {
-                KipMailTools.clearComposeLibraryAttachments();
-            }
-            composeOverlay.hidden = true;
+            closeComposeWithDraftSave();
         });
 
         composeOverlay.addEventListener("click", function (e) {
             if (e.target === composeOverlay) {
-                if (window.KipMailTools && typeof KipMailTools.clearComposeLibraryAttachments === "function") {
-                    KipMailTools.clearComposeLibraryAttachments();
-                }
-                composeOverlay.hidden = true;
+                closeComposeWithDraftSave();
+            }
+        });
+    }
+
+    const composeSaveDraftBtn = document.getElementById("compose-save-draft");
+    if (composeSaveDraftBtn) {
+        composeSaveDraftBtn.addEventListener("click", async function () {
+            const result = await saveComposeDraft({ closeAfter: false, silentEmpty: false });
+            if (result && result.saved) {
+                window.alert("Taslak kaydedildi. Taslaklar klasöründen açabilirsiniz.");
+            } else if (result && !result.error) {
+                window.alert("Kaydedilecek bir içerik yok.");
+            }
+        });
+    }
+
+    const composeForm = document.getElementById("compose-form");
+    if (composeForm) {
+        composeForm.addEventListener("submit", function (e) {
+            const to = (document.getElementById("compose-to-email")?.value || "").trim();
+            const body = (document.getElementById("compose-body")?.value || "").trim();
+            if (!to) {
+                e.preventDefault();
+                window.alert("Göndermek için alıcı gerekli.");
+                return;
+            }
+            if (!body) {
+                e.preventDefault();
+                window.alert("Göndermek için mail metni gerekli.");
             }
         });
     }
@@ -779,8 +1148,7 @@
         if (!button || !fields) return;
         button.addEventListener("click", function () {
             const willShow = fields.hidden;
-            fields.hidden = !willShow;
-            button.classList.toggle("active", willShow);
+            setRecipientExtraVisible(fields, button, willShow);
         });
     }
 
@@ -1561,7 +1929,7 @@
         bindAllMics();
 
         // Re-bind when panels open (in case nodes were added later)
-        [aiReplyBtn, replyBtn, composeBtn, composeAiToggle].forEach(function (btn) {
+        [aiReplyBtn, replyBtn, replyAllBtn, composeBtn, composeAiToggle].forEach(function (btn) {
             if (!btn) return;
             btn.addEventListener("click", function () {
                 window.setTimeout(bindAllMics, 50);

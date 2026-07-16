@@ -91,7 +91,7 @@ fun SettingsScreen(
         ) {
             if (onLogout == null) {
                 Text("Ayarlar", style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(8.dp))
+                Spacer(modifier.height(8.dp))
             }
 
             if (!userEmail.value.isNullOrBlank()) {
@@ -101,13 +101,13 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier.height(16.dp))
                 HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier.height(16.dp))
             }
 
             Text("Sunucu adresi", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier.height(8.dp))
             OutlinedTextField(
                 value = baseUrl.value,
                 onValueChange = { baseUrl.value = it },
@@ -115,7 +115,7 @@ fun SettingsScreen(
                 placeholder = { Text("https://kip-asistan.onrender.com/api/v1/") },
                 singleLine = true,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier.height(8.dp))
 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -128,21 +128,30 @@ fun SettingsScreen(
                     onClick = { baseUrl.value = SessionManager.EMULATOR_BASE_URL },
                     label = { Text("Emülatör") },
                 )
+                FilterChip(
+                    selected = baseUrl.value.startsWith("http://") &&
+                        !baseUrl.value.contains("10.0.2.2") &&
+                        baseUrl.value.contains(":5001"),
+                    onClick = {
+                        baseUrl.value = SessionManager.lanBaseUrl(SessionManager.LAN_IP_PLACEHOLDER)
+                    },
+                    label = { Text("Telefon (LAN IP)") },
+                )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier.height(8.dp))
             Text(
-                "Varsayılan: Render canlı sunucu. Emülatör için 10.0.2.2, gerçek telefon için bilgisayarınızın yerel IP adresi.",
+                "Telefon: http://BILGISAYAR_IP:5001/api/v1/ (örnek ${SessionManager.LAN_IP_PLACEHOLDER}). start.bat IP'yi gösterir. Aynı Wi‑Fi gerekir.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier.height(8.dp))
             Text(
                 "KipGPT sürümü: ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(modifier.height(16.dp))
 
             Button(
                 onClick = {
@@ -159,7 +168,7 @@ fun SettingsScreen(
                 Text("Kaydet")
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier.height(8.dp))
             OutlinedButton(
                 onClick = {
                     scope.launch {
@@ -196,9 +205,9 @@ fun SettingsScreen(
             }
 
             if (onLogout != null) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier.height(16.dp))
                 HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier.height(16.dp))
                 OutlinedButton(
                     onClick = {
                         scope.launch {

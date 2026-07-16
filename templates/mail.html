@@ -12,7 +12,7 @@
                 <span class="material-icons-outlined">menu</span>
             </button>
             <a href="/mail" class="gmail-logo">
-                <span class="logo-icon material-icons-outlined">mail</span>
+                <img class="logo-brand-icon" src="{{ url_for('static', filename='img/kipgpt-icon.png') }}" width="32" height="32" alt="KipGPT">
                 <span class="logo-text">KipGPT Mail</span>
             </a>
         </div>
@@ -49,6 +49,8 @@
         </div>
 
     </header>
+
+    <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
 
     <div class="gmail-body">
 
@@ -130,11 +132,19 @@
 
         </aside>
 
-        <!-- Ana İçerik -->
-        <main class="gmail-main">
+        <!-- Ana İçerik: liste + okuma paneli ayrı kartlar -->
+        <main class="gmail-main mail-split-view">
 
             <!-- Mail Listesi -->
-            <section class="gmail-list-panel">
+            <section class="gmail-list-panel" aria-label="Mail listesi">
+
+                <div class="panel-heading list-panel-heading">
+                    <div class="panel-heading-text">
+                        <span class="panel-kicker">Klasör</span>
+                        <h2 class="panel-title folder-title">{{ folder_label }}</h2>
+                    </div>
+                    <span class="mail-count-chip">{{ mailler|length }} mail</span>
+                </div>
 
                 <div class="list-toolbar">
                     <div class="toolbar-left">
@@ -157,10 +167,6 @@
                         <button class="icon-btn" type="button" title="Diğer">
                             <span class="material-icons-outlined">more_vert</span>
                         </button>
-                    </div>
-                    <div class="toolbar-right">
-                        <span class="mail-count">{{ mailler|length }} mail</span>
-                        <span class="folder-title">{{ folder_label }}</span>
                     </div>
                 </div>
 
@@ -187,6 +193,7 @@
                             class="gmail-row{% if m.thread_count and m.thread_count > 1 %} is-thread{% endif %}"
                             data-mail-id="{{ m.id }}"
                             data-thread-ids="{{ (m.thread_ids or [m.id])|join(',') }}"
+                            data-sender-initial="{{ (m.sender_display or m.sender or '?')[:1]|upper }}"
                             tabindex="0">
 
                             <div class="row-check">
@@ -200,18 +207,21 @@
                                 <span class="material-icons-outlined">star_border</span>
                             </button>
 
-                            <div class="row-sender">{{ m.sender_display }}</div>
+                            <div class="row-avatar" aria-hidden="true">{{ (m.sender_display or m.sender or '?')[:1]|upper }}</div>
 
-                            <div class="row-content">
-                                <span class="row-subject">{{ m.subject or "Konu yok" }}</span>
-                                {% if m.thread_count and m.thread_count > 1 %}
-                                <span class="thread-count">{{ m.thread_count }}</span>
-                                {% endif %}
-                                <span class="row-separator">-</span>
-                                <span class="row-snippet">{{ m.content[:80] }}</span>
+                            <div class="row-main">
+                                <div class="row-top">
+                                    <div class="row-sender">{{ m.sender_display }}</div>
+                                    <div class="row-date">{{ m.date }}</div>
+                                </div>
+                                <div class="row-content">
+                                    <span class="row-subject">{{ m.subject or "Konu yok" }}</span>
+                                    {% if m.thread_count and m.thread_count > 1 %}
+                                    <span class="thread-count">{{ m.thread_count }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="row-snippet">{{ m.content[:100] }}</div>
                             </div>
-
-                            <div class="row-date">{{ m.date }}</div>
 
                         </div>
                         {% endfor %}
@@ -230,14 +240,21 @@
             </section>
 
             <!-- Okuma Paneli -->
-            <section class="gmail-reader" id="gmail-reader">
+            <section class="gmail-reader" id="gmail-reader" aria-label="Mail içeriği">
+
+                <div class="panel-heading reader-panel-heading" id="reader-panel-heading">
+                    <div class="panel-heading-text">
+                        <span class="panel-kicker">İçerik</span>
+                        <h2 class="panel-title">Mail önizleme</h2>
+                    </div>
+                </div>
 
                 <div class="reader-empty" id="reader-empty"{% if ai_yaniti %} hidden{% endif %}>
                     <div class="empty-illustration">
                         <span class="material-icons-outlined">mark_email_unread</span>
                     </div>
                     <p>Bir mail seçin</p>
-                    <span class="empty-hint">Soldaki listeden bir mail seçtiğinizde içeriği burada görüntülenir.</span>
+                    <span class="empty-hint">Soldaki listeden bir ileti seçtiğinizde konusu, göndereni ve tam içeriği burada açılır.</span>
                 </div>
 
                 <div class="reader-content" id="reader-content" hidden>
@@ -305,7 +322,7 @@
                                     <span class="meta-from" id="reader-from"></span>
                                     <span class="meta-date" id="reader-date"></span>
                                 </div>
-                                <div class="meta-to">Kime: ben</div>
+                                <div class="meta-to" id="reader-to">Kime: ben</div>
                             </div>
                         </div>
                     </div>
@@ -331,6 +348,10 @@
                                 <span class="material-icons-outlined">reply</span>
                                 Yanıtla
                             </button>
+                            <button class="action-btn" type="button" id="reply-all-btn">
+                                <span class="material-icons-outlined">reply_all</span>
+                                Tümünü Yanıtla
+                            </button>
                             <button class="action-btn action-btn-ai" type="button" id="ai-reply-btn">
                                 <span class="material-icons-outlined">auto_awesome</span>
                                 AI ile Yanıtla
@@ -343,21 +364,74 @@
 
                         <div class="manual-reply-panel" id="manual-reply-panel" hidden>
                             <div class="reply-panel-header">
-                                <span class="material-icons-outlined">edit</span>
-                                <h3>Manuel Yanıt</h3>
+                                <span class="material-icons-outlined">reply_all</span>
+                                <h3 id="manual-reply-title">Yanıt</h3>
                             </div>
-                            <form method="post" class="manual-reply-form" enctype="multipart/form-data">
+
+                            <div class="recipient-fields" id="manual-reply-recipients">
+                                <div class="recipient-row">
+                                    <label class="recipient-label" for="manual-reply-to">Kime</label>
+                                    <input type="text" name="to_email" id="manual-reply-to" form="manual-reply-form" class="recipient-input" placeholder="alici@ornek.com" autocomplete="off" required>
+                                    <button type="button" class="recipient-toggle-btn" id="manual-reply-cc-toggle" title="Cc / Bcc göster">Cc/Bcc</button>
+                                </div>
+                                <div class="recipient-extra" id="manual-reply-extra-fields" hidden>
+                                    <div class="recipient-row">
+                                        <label class="recipient-label" for="manual-reply-cc">Cc</label>
+                                        <input type="text" name="cc_email" id="manual-reply-cc" form="manual-reply-form" class="recipient-input" placeholder="kopya@ornek.com" autocomplete="off">
+                                    </div>
+                                    <div class="recipient-row">
+                                        <label class="recipient-label" for="manual-reply-bcc">Bcc</label>
+                                        <input type="text" name="bcc_email" id="manual-reply-bcc" form="manual-reply-form" class="recipient-input" placeholder="gizli@ornek.com" autocomplete="off">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="reply-ai-box" id="reply-ai-box">
+                                <div class="ai-panel-header">
+                                    <span class="material-icons-outlined">auto_awesome</span>
+                                    <h3>KipGPT ile Yanıt Oluştur</h3>
+                                </div>
+                                <p class="draft-edit-hint">İpucu yazın; oluşturulan yanıt yukarıdaki Kime/Cc listesine gönderilir.</p>
+                                <div class="ai-thinking" id="ai-thinking" hidden aria-live="polite">
+                                    <span class="ai-thinking-text">Düşünüyor</span>
+                                    <span class="ai-thinking-dots" aria-hidden="true">
+                                        <span>.</span><span>.</span><span>.</span>
+                                    </span>
+                                </div>
+                                <form method="post" class="ai-form" id="ai-generate-form">
+                                    <input type="hidden" name="islem" value="olustur">
+                                    <input type="hidden" name="mail_id" id="ai-mail-id">
+                                    <input type="hidden" name="sender" id="ai-sender">
+                                    <input type="hidden" name="subject" id="ai-subject">
+                                    <input type="hidden" name="content" id="ai-content">
+                                    <input type="hidden" name="to_email" id="ai-to-email">
+                                    <input type="hidden" name="cc_email" id="ai-cc-email">
+                                    <input type="hidden" name="bcc_email" id="ai-bcc-email">
+                                    <input type="hidden" name="reply_all" id="ai-reply-all" value="0">
+                                    <label class="ai-instruction-label" for="ai-user-instruction">İpucu / Talimat</label>
+                                    <div class="speech-field-wrap">
+                                        <textarea
+                                            id="ai-user-instruction"
+                                            name="user_instruction"
+                                            placeholder="Yanıtın nasıl olmasını istiyorsunuz? Örn: Daha kısa yaz, resmi dil kullan..."
+                                            rows="3"></textarea>
+                                        <button type="button" class="speech-mic-btn speech-field-mic" id="ai-instruction-mic" title="Sesle yaz">
+                                            <span class="material-icons-outlined">mic</span>
+                                        </button>
+                                    </div>
+                                    <button type="submit" class="action-btn action-btn-ai reply-ai-generate-btn" id="reply-ai-generate-btn" title="AI ile yanıt oluştur">
+                                        <span class="material-icons-outlined">auto_awesome</span>
+                                        AI ile Oluştur
+                                    </button>
+                                </form>
+                            </div>
+
+                            <div class="reply-or-divider"><span>veya kendiniz yazın</span></div>
+
+                            <form method="post" class="manual-reply-form" id="manual-reply-form" enctype="multipart/form-data">
                                 <input type="hidden" name="islem" value="gonder">
                                 <input type="hidden" name="sender" id="manual-reply-sender">
                                 <input type="hidden" name="subject" id="manual-reply-subject">
-                                <div class="compose-field-row reply-field-row">
-                                    <input type="text" id="manual-reply-to" class="compose-readonly" readonly>
-                                    <button type="button" class="compose-cc-toggle" id="manual-reply-cc-toggle">Cc / Bcc</button>
-                                </div>
-                                <div class="compose-extra-fields" id="manual-reply-extra-fields" hidden>
-                                    <input type="text" name="cc_email" id="manual-reply-cc" placeholder="Cc">
-                                    <input type="text" name="bcc_email" id="manual-reply-bcc" placeholder="Bcc">
-                                </div>
                                 <div class="speech-field-wrap">
                                     <textarea name="final_reply" id="manual-reply-body" class="manual-reply-editor" rows="8" placeholder="Yanıtınızı buraya yazın..."></textarea>
                                     <button type="button" class="speech-mic-btn speech-field-mic" id="manual-reply-mic" title="Sesle yaz">
@@ -379,40 +453,7 @@
                             </form>
                         </div>
 
-                        <div class="ai-panel" id="ai-panel" hidden>
-                            <div class="ai-panel-header">
-                                <span class="material-icons-outlined">auto_awesome</span>
-                                <h3>KipGPT ile Yanıt Oluştur</h3>
-                            </div>
-                            <p class="draft-edit-hint">Örn: "Kısa yaz", "Satış tablosu ekle", "teklif.pdf dosyasını ekle".</p>
-                            <div class="ai-thinking" id="ai-thinking" hidden aria-live="polite">
-                                <span class="ai-thinking-text">Düşünüyor</span>
-                                <span class="ai-thinking-dots" aria-hidden="true">
-                                    <span>.</span><span>.</span><span>.</span>
-                                </span>
-                            </div>
-                            <form method="post" class="ai-form" id="ai-generate-form">
-                                <input type="hidden" name="islem" value="olustur">
-                                <input type="hidden" name="mail_id" id="ai-mail-id">
-                            <input type="hidden" name="sender" id="ai-sender">
-                                <input type="hidden" name="subject" id="ai-subject">
-                                <input type="hidden" name="content" id="ai-content">
-                                <label class="ai-instruction-label" for="ai-user-instruction">İpucu / Talimat</label>
-                                <div class="speech-field-wrap">
-                                    <textarea
-                                        id="ai-user-instruction"
-                                        name="user_instruction"
-                                        placeholder="Yanıtın nasıl olmasını istiyorsunuz? Örn: Daha kısa yaz, resmi dil kullan, fiyat teklifini ekle..."
-                                        rows="4"></textarea>
-                                    <button type="button" class="speech-mic-btn speech-field-mic" id="ai-instruction-mic" title="Sesle yaz">
-                                        <span class="material-icons-outlined">mic</span>
-                                    </button>
-                                </div>
-                                <button type="submit" class="icon-round-btn icon-round-btn-send ai-generate-btn" title="Yanıt Oluştur">
-                                    <span class="material-icons-outlined">auto_awesome</span>
-                                </button>
-                            </form>
-                        </div>
+                        <div class="ai-panel" id="ai-panel" hidden aria-hidden="true"></div>
                     </div>
 
                 </div>
@@ -440,17 +481,28 @@
         </div>
         <form method="post" action="/mail" enctype="multipart/form-data" class="compose-form" id="compose-form">
             <input type="hidden" name="islem" value="yeni_gonder">
-            <div class="compose-field-row compose-to-row">
-                <input type="text" name="to_email" id="compose-to-email" class="compose-to-input" placeholder="Kime" required autocomplete="off">
-                <aside class="compose-contact-panel" id="compose-contact-panel" hidden>
-                    <div class="compose-contact-title">Son kişiler</div>
-                    <div class="compose-contact-list" id="compose-contact-list"></div>
-                </aside>
-                <button type="button" class="compose-cc-toggle" id="compose-cc-toggle">Cc / Bcc</button>
-            </div>
-            <div class="compose-extra-fields" id="compose-extra-fields" hidden>
-                <input type="text" name="cc_email" placeholder="Cc">
-                <input type="text" name="bcc_email" placeholder="Bcc">
+            <div class="recipient-fields compose-recipient-fields">
+                <div class="recipient-row compose-to-row">
+                    <label class="recipient-label" for="compose-to-email">Kime</label>
+                    <div class="recipient-input-wrap">
+                        <input type="text" name="to_email" id="compose-to-email" class="recipient-input compose-to-input" placeholder="alici@ornek.com" autocomplete="off">
+                        <aside class="compose-contact-panel" id="compose-contact-panel" hidden>
+                            <div class="compose-contact-title">Son kişiler</div>
+                            <div class="compose-contact-list" id="compose-contact-list"></div>
+                        </aside>
+                    </div>
+                    <button type="button" class="recipient-toggle-btn" id="compose-cc-toggle" title="Cc / Bcc göster">Cc/Bcc</button>
+                </div>
+                <div class="recipient-extra" id="compose-extra-fields" hidden>
+                    <div class="recipient-row">
+                        <label class="recipient-label" for="compose-cc-email">Cc</label>
+                        <input type="text" name="cc_email" id="compose-cc-email" class="recipient-input" placeholder="kopya@ornek.com" autocomplete="off">
+                    </div>
+                    <div class="recipient-row">
+                        <label class="recipient-label" for="compose-bcc-email">Bcc</label>
+                        <input type="text" name="bcc_email" id="compose-bcc-email" class="recipient-input" placeholder="gizli@ornek.com" autocomplete="off">
+                    </div>
+                </div>
             </div>
             <input type="text" name="new_subject" id="compose-subject" placeholder="Konu">
             <div class="speech-field-wrap">
@@ -502,6 +554,9 @@
                 <input type="file" id="compose-library-file" class="mail-attach-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" hidden>
                 <button type="button" class="icon-round-btn icon-round-btn-tonal" id="compose-ai-toggle" title="AI ile yaz">
                     <span class="material-icons-outlined">auto_awesome</span>
+                </button>
+                <button type="button" class="icon-round-btn icon-round-btn-tonal" id="compose-save-draft" title="Taslak kaydet">
+                    <span class="material-icons-outlined">draft</span>
                 </button>
                 <button type="submit" class="icon-round-btn icon-round-btn-send send-compose-btn" title="Gönder">
                     <span class="material-icons-outlined">send</span>
@@ -691,7 +746,7 @@
                 <span class="material-icons-outlined mail-dialog-icon">person_add</span>
                 <div>
                     <h2 class="mail-dialog-title" id="account-title">Mail Hesabı Ekle</h2>
-                    <p class="mail-dialog-subtitle">Giriş hesabınızdan bağımsız yeni bir e-posta bağlayın</p>
+                    <p class="mail-dialog-subtitle">Gmail OAuth ile bağlayın veya uygulama şifresi ile ekleyin</p>
                 </div>
             </div>
             <button class="icon-btn mail-dialog-close" type="button" id="account-close" aria-label="Kapat">
@@ -699,63 +754,100 @@
             </button>
         </div>
 
-        <form method="post" class="account-form">
-            <input type="hidden" name="islem" value="hesap_ekle">
-
-            <div class="mail-dialog-body">
-            <label class="dialog-field">
-                <span class="dialog-label">Görünen ad <span class="dialog-optional">(isteğe bağlı)</span></span>
-                <input type="text" name="account_label" class="dialog-input" placeholder="Örn: İş maili">
-            </label>
-
-            <label class="dialog-field">
-                <span class="dialog-label">E-posta adresi</span>
-                <input type="email" name="account_email" class="dialog-input" placeholder="ornek@gmail.com" required>
-            </label>
-
-            <label class="dialog-field">
-                <span class="dialog-label">E-posta sağlayıcısı</span>
-                <select name="mail_provider" id="account_provider" class="dialog-input">
-                    {% for key, preset in providers.items() %}
-                    <option value="{{ key }}">{{ preset.label }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-
-            <p class="dialog-hint" id="account-provider-hint">{{ providers.gmail.hint }}</p>
-
-            <label class="dialog-field">
-                <span class="dialog-label">E-posta / uygulama şifresi</span>
-                <input type="password" name="mail_password" class="dialog-input" placeholder="••••••••••••" required>
-            </label>
-
-            <div id="account-custom-fields" class="dialog-custom-fields" hidden>
-                <label class="dialog-field">
-                    <span class="dialog-label">IMAP sunucu</span>
-                    <input type="text" name="imap_server" class="dialog-input" placeholder="imap.ornek.com">
-                </label>
-                <label class="dialog-field">
-                    <span class="dialog-label">SMTP sunucu</span>
-                    <input type="text" name="smtp_server" class="dialog-input" placeholder="smtp.ornek.com">
-                </label>
-                <div class="dialog-port-row">
-                    <label class="dialog-field">
-                        <span class="dialog-label">IMAP port</span>
-                        <input type="number" name="imap_port" class="dialog-input" value="993">
-                    </label>
-                    <label class="dialog-field">
-                        <span class="dialog-label">SMTP port</span>
-                        <input type="number" name="smtp_port" class="dialog-input" value="587">
-                    </label>
+        <div class="mail-dialog-body">
+            {% set oauth = oauth_providers|default({}, true) %}
+            {% set google_oauth_ok = oauth.google.configured if oauth.google is defined else false %}
+            {% set microsoft_oauth_ok = oauth.microsoft.configured if oauth.microsoft is defined else false %}
+            {% set yahoo_oauth_ok = oauth.yahoo.configured if oauth.yahoo is defined else false %}
+            <div class="oauth-connect-block">
+                <p class="dialog-label">Şifresiz bağla (önerilen)</p>
+                <div class="oauth-connect-grid">
+                    <a class="oauth-connect-btn oauth-google{% if not google_oauth_ok %} is-disabled{% endif %}"
+                       href="{% if google_oauth_ok %}/mail/oauth/google/start{% else %}#{% endif %}"
+                       {% if not google_oauth_ok %}aria-disabled="true" tabindex="-1"{% endif %}
+                       title="Google OAuth ile Gmail bağla">
+                        <span class="material-icons-outlined">mail</span>
+                        Gmail Hesabı Ekle
+                    </a>
+                    <a class="oauth-connect-btn oauth-microsoft{% if not microsoft_oauth_ok %} is-disabled{% endif %}"
+                       href="{% if microsoft_oauth_ok %}/mail/oauth/microsoft/start{% else %}#{% endif %}"
+                       {% if not microsoft_oauth_ok %}aria-disabled="true" tabindex="-1"{% endif %}>
+                        <span class="material-icons-outlined">windows</span>
+                        Outlook
+                    </a>
+                    <a class="oauth-connect-btn oauth-yahoo{% if not yahoo_oauth_ok %} is-disabled{% endif %}"
+                       href="{% if yahoo_oauth_ok %}/mail/oauth/yahoo/start{% else %}#{% endif %}"
+                       {% if not yahoo_oauth_ok %}aria-disabled="true" tabindex="-1"{% endif %}>
+                        <span class="material-icons-outlined">alternate_email</span>
+                        Yahoo
+                    </a>
                 </div>
-            </div>
+                <p class="dialog-hint" id="oauth-connect-hint">
+                    Google / Microsoft / Yahoo hesabınızla giriş yapın; mailler otomatik senkronize olur.
+                    {% if not google_oauth_ok and not microsoft_oauth_ok and not yahoo_oauth_ok %}
+                    <br>OAuth anahtarları henüz sunucuda tanımlı değil — aşağıdan şifre ile ekleyebilirsiniz.
+                    {% endif %}
+                </p>
             </div>
 
-            <div class="mail-dialog-footer account-dialog-footer">
-                <button type="button" class="dialog-btn dialog-btn-secondary" id="account-cancel">Vazgeç</button>
-                <button type="submit" class="account-submit-btn" id="account-submit" style="display:inline-flex;align-items:center;justify-content:center;min-width:140px;height:42px;padding:0 24px;border-radius:21px;border:2px solid #1557b0;background-color:#1a73e8;color:#ffffff;font-size:15px;font-weight:700;font-family:Roboto,Segoe UI,sans-serif;cursor:pointer;box-shadow:0 2px 6px rgba(26,115,232,.4);">Hesabı Ekle</button>
-            </div>
-        </form>
+            <div class="oauth-or-divider"><span>veya şifre ile ekle</span></div>
+
+            <form method="post" class="account-form" id="account-password-form">
+                <input type="hidden" name="islem" value="hesap_ekle">
+
+                <label class="dialog-field">
+                    <span class="dialog-label">Görünen ad <span class="dialog-optional">(isteğe bağlı)</span></span>
+                    <input type="text" name="account_label" class="dialog-input" placeholder="Örn: İş maili">
+                </label>
+
+                <label class="dialog-field">
+                    <span class="dialog-label">E-posta adresi</span>
+                    <input type="email" name="account_email" class="dialog-input" placeholder="ornek@gmail.com" required>
+                </label>
+
+                <label class="dialog-field">
+                    <span class="dialog-label">E-posta sağlayıcısı</span>
+                    <select name="mail_provider" id="account_provider" class="dialog-input">
+                        {% for key, preset in providers.items() %}
+                        <option value="{{ key }}">{{ preset.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <p class="dialog-hint" id="account-provider-hint">{{ providers.gmail.hint }}</p>
+
+                <label class="dialog-field">
+                    <span class="dialog-label">E-posta / uygulama şifresi</span>
+                    <input type="password" name="mail_password" class="dialog-input" placeholder="••••••••••••" required>
+                </label>
+
+                <div id="account-custom-fields" class="dialog-custom-fields" hidden>
+                    <label class="dialog-field">
+                        <span class="dialog-label">IMAP sunucu</span>
+                        <input type="text" name="imap_server" class="dialog-input" placeholder="imap.ornek.com">
+                    </label>
+                    <label class="dialog-field">
+                        <span class="dialog-label">SMTP sunucu</span>
+                        <input type="text" name="smtp_server" class="dialog-input" placeholder="smtp.ornek.com">
+                    </label>
+                    <div class="dialog-port-row">
+                        <label class="dialog-field">
+                            <span class="dialog-label">IMAP port</span>
+                            <input type="number" name="imap_port" class="dialog-input" value="993">
+                        </label>
+                        <label class="dialog-field">
+                            <span class="dialog-label">SMTP port</span>
+                            <input type="number" name="smtp_port" class="dialog-input" value="587">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mail-dialog-footer account-dialog-footer" style="padding:16px 0 0;border:none;margin:0 -0;">
+                    <button type="button" class="dialog-btn dialog-btn-secondary" id="account-cancel">Vazgeç</button>
+                    <button type="submit" class="account-submit-btn" id="account-submit">Hesabı Ekle</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -788,11 +880,15 @@
         loading="lazy"></iframe>
 </div>
 
+<button type="button" class="mobile-compose-fab" id="mobile-compose-fab" title="Yeni mail yaz" aria-label="Yeni mail yaz">
+    <span class="material-icons-outlined">edit</span>
+</button>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=53"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=57"></script>
 <script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=2"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>

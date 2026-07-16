@@ -20,6 +20,7 @@ from flask import Flask
 from routes.auth_routes import auth_bp
 from routes.chat_routes import chat_bp
 from routes.mail_page import mail_bp
+from routes.mail_oauth import mail_oauth_bp
 from routes.mobile_api import mobile_api_bp
 from routes.tools_routes import tools_bp
 from services.security import allow_dev_quick_login, resolve_flask_secret_key
@@ -39,6 +40,7 @@ def create_app():
     application.register_blueprint(auth_bp)
     application.register_blueprint(chat_bp)
     application.register_blueprint(mail_bp)
+    application.register_blueprint(mail_oauth_bp)
     application.register_blueprint(mobile_api_bp)
     application.register_blueprint(tools_bp)
 
