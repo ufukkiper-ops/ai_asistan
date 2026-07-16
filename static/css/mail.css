@@ -351,8 +351,20 @@ html, body {
     }
 }
 
+.mail-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(32, 33, 36, 0.55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 1100;
+}
+
 .mail-dialog-overlay[hidden] {
-    display: none;
+    display: none !important;
 }
 
 .mail-dialog {

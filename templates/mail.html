@@ -792,8 +792,11 @@
 
             <div class="oauth-or-divider"><span>veya şifre ile ekle</span></div>
 
-            <form method="post" class="account-form" id="account-password-form">
+            <form method="post" action="/mail?folder={{ folder }}{% if active_account_id %}&account={{ active_account_id }}{% endif %}" class="account-form" id="account-password-form">
                 <input type="hidden" name="islem" value="hesap_ekle">
+                {% if active_account_id %}
+                <input type="hidden" name="account_id" value="{{ active_account_id }}">
+                {% endif %}
 
                 <label class="dialog-field">
                     <span class="dialog-label">Görünen ad <span class="dialog-optional">(isteğe bağlı)</span></span>
@@ -888,8 +891,8 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=57"></script>
-<script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=2"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=58"></script>
+<script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=2"></script>
 {% endblock %}

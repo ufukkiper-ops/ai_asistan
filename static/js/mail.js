@@ -1541,6 +1541,29 @@
         });
     }
 
+    // OAuth butonlari: yapilandirilmamissa acik mesaj goster
+    document.querySelectorAll(".oauth-connect-btn").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+            if (btn.classList.contains("is-disabled") || btn.getAttribute("aria-disabled") === "true") {
+                e.preventDefault();
+                window.alert(
+                    "Bu saglayici henuz sunucuda yapilandirilmadi. " +
+                    "Google/Microsoft/Yahoo OAuth anahtarlarini Render Environment'a ekleyin " +
+                    "veya asagidan sifre / uygulama sifresi ile baglayin."
+                );
+            }
+        });
+    });
+
+    const accountPasswordForm = document.getElementById("account-password-form");
+    const accountSubmitBtn = document.getElementById("account-submit");
+    if (accountPasswordForm && accountSubmitBtn) {
+        accountPasswordForm.addEventListener("submit", function () {
+            accountSubmitBtn.disabled = true;
+            accountSubmitBtn.textContent = "Baglaniyor...";
+        });
+    }
+
     document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
         if (settingsOverlay && !settingsOverlay.hidden) {
