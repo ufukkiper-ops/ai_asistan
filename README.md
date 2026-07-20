@@ -94,6 +94,17 @@ Aç: `http://127.0.0.1:5001/login` → Mail → **Hesap Ekle** (e-posta + uygula
 
 > Not: Railway’de kalıcı disk yoksa `users.json` / mail hesapları redeploy’da silinebilir. Volume eklemeniz önerilir (`/workspace` veya proje kökü).
 
+## Sürekli açık PC sunucu (köle bilgisayar)
+
+Formatlanmış ikinci Windows PC’yi sunucu yapmak için:
+
+```bat
+server\install_server.bat
+server\run_server.bat
+```
+
+Ayrıntı: [server/README.md](server/README.md)
+
 ## Render deploy
 
 1. Repo’yu Render’a bağla (`render.yaml` hazır)
