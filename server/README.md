@@ -53,6 +53,16 @@ Aç:
 - Bu PC: http://127.0.0.1:5001  
 - Telefondan / ana PC: http://LAN-IP:5001  
 
+## Güncelleme (ana PC’den push sonrası)
+
+Köle PC’de çift tıkla:
+
+```bat
+server\update_and_restart.bat
+```
+
+Bu işlem: eski sunucuyu kapatır → `git pull` → paketleri günceller → sunucuyu yeniden açar.
+
 ## 6. Sürekli açık kalsın
 
 | Ayar | Nerede |
