@@ -18,7 +18,7 @@ _SECRET_FIELDS = ("password", "access_token", "refresh_token")
 
 
 def is_production() -> bool:
-    if os.getenv("RENDER"):
+    if os.getenv("RENDER") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"):
         return True
     env = (os.getenv("FLASK_ENV") or os.getenv("ENV") or "").strip().lower()
     return env in {"production", "prod"}

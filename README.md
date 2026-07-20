@@ -76,6 +76,24 @@ Aç: `http://127.0.0.1:5001/login` → Mail → **Hesap Ekle** (e-posta + uygula
 
 > Gmail / Outlook / Yahoo OAuth (şifresiz) giriş kapalıdır. Yeniden açmak için `OAUTH_LOGIN_ENABLED=1` ortam değişkenini ekleyin.
 
+## Railway deploy
+
+1. [railway.com/new](https://railway.com/new) → **Deploy from GitHub repo**
+2. Repo: `ufukkiper-ops/ai_asistan` (branch: `cursor/desktop-app-2ceb` veya `main`)
+3. Railway `Procfile` / `railway.toml` ile otomatik başlar
+4. Variables (Settings → Variables):
+
+| Değişken | Örnek |
+|----------|--------|
+| `FLASK_SECRET_KEY` | güçlü rastgele değer |
+| `OPENAI_API_KEY` | `sk-...` |
+| `PUBLIC_BASE_URL` | `https://<proje>.up.railway.app` |
+| `RAILWAY` | `1` (opsiyonel) |
+
+5. Deploy sonrası health: `https://<proje>.up.railway.app/health`
+
+> Not: Railway’de kalıcı disk yoksa `users.json` / mail hesapları redeploy’da silinebilir. Volume eklemeniz önerilir (`/workspace` veya proje kökü).
+
 ## Render deploy
 
 1. Repo’yu Render’a bağla (`render.yaml` hazır)
