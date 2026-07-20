@@ -96,6 +96,7 @@ def _serialize_mail(mail, for_list=False):
         "attachments": attachments,
         "thread_count": mail.get("thread_count", 1),
         "starred": bool(mail.get("starred")),
+        "unread": bool(mail.get("unread")),
     }
 
 

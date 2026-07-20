@@ -196,7 +196,7 @@
 
                         {% for m in mailler %}
                         <div
-                            class="gmail-row{% if m.thread_count and m.thread_count > 1 %} is-thread{% endif %}"
+                            class="gmail-row{% if m.thread_count and m.thread_count > 1 %} is-thread{% endif %}{% if m.unread %} unread{% else %} read{% endif %}"
                             data-mail-id="{{ m.id }}"
                             data-thread-ids="{{ (m.thread_ids or [m.id])|join(',') }}"
                             data-sender-initial="{{ (m.sender_display or m.sender or '?')[:1]|upper }}"
@@ -862,6 +862,6 @@
 <script src="{{ url_for('static', filename='js/speech.js') }}?v=2"></script>
 <script id="provider-data" type="application/json">{{ providers|tojson }}</script>
 <script id="sensitivity-data" type="application/json">{{ sensitivity_presets|tojson }}</script>
-<script src="{{ url_for('static', filename='js/mail.js') }}?v=65"></script>
+<script src="{{ url_for('static', filename='js/mail.js') }}?v=66"></script>
 <script src="{{ url_for('static', filename='js/mail-tools.js') }}?v=3"></script>
 {% endblock %}

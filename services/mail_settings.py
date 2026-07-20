@@ -110,6 +110,57 @@ def parse_sender_list(text):
     return items
 
 
+def normalize_sender_email(sender: str) -> str:
+    """Display name / From satırından e-posta adresini çıkarır."""
+    import re
+
+    text = (sender or "").strip().lower()
+    if not text:
+        return ""
+    match = re.search(r"[\w.+-]+@[\w.-]+\.\w+", text)
+    return (match.group(0) if match else text).strip().lower()
+
+
+def add_trusted_senders(user_id, senders):
+    """Spam Değil sonrası gönderenleri güvenilir listeye ekler; engelli listeden çıkarır."""
+    user_id = (user_id or "").strip()
+    emails = []
+    for sender in senders or []:
+        email = normalize_sender_email(sender)
+        if email and email not in emails:
+            emails.append(email)
+    if not user_id or not emails:
+        return []
+
+    users = load_users()
+    added = []
+    for index, user in enumerate(users):
+        if (user.get("email") or user.get("username") or "").strip() != user_id:
+            continue
+
+        raw = dict(user.get("mail_settings") or {})
+        trusted = parse_sender_list(raw.get("trusted_senders"))
+        blocked = parse_sender_list(raw.get("blocked_senders"))
+
+        for email in emails:
+            if email not in trusted:
+                trusted.append(email)
+                added.append(email)
+            blocked = [
+                entry
+                for entry in blocked
+                if entry != email and email not in entry and entry not in email
+            ]
+
+        raw["trusted_senders"] = "\n".join(trusted)
+        raw["blocked_senders"] = "\n".join(blocked)
+        users[index]["mail_settings"] = raw
+        save_users(users)
+        return added
+
+    return []
+
+
 def save_mail_settings(user_id, form):
     sensitivity = form.get("spam_sensitivity", "normal").strip()
     if sensitivity not in SENSITIVITY_PRESETS:
