@@ -745,23 +745,33 @@
         fillManualReplyFields(mail, !!replyAll);
         manualReplyPanel.hidden = false;
         if (aiPanel) aiPanel.hidden = true;
-        manualReplyPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        const aiGenerateBtn = document.getElementById("reply-ai-generate-btn");
         const aiInstruction = document.getElementById("ai-user-instruction");
-        if (aiInstruction) {
-            aiInstruction.focus();
-        } else if (manualReplyBody) {
-            manualReplyBody.focus();
-        }
+        window.setTimeout(function () {
+            if (aiGenerateBtn) {
+                aiGenerateBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            } else {
+                manualReplyPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+            if (aiInstruction) {
+                aiInstruction.focus();
+            } else if (manualReplyBody) {
+                manualReplyBody.focus();
+            }
+        }, 40);
     }
 
     function showAiReplyPanel() {
         // AI artık yanıt panelinin içinde; varsayılan olarak yanıtla aç
         showManualReplyPanel(false);
         const aiInstruction = document.getElementById("ai-user-instruction");
-        if (aiInstruction) {
-            aiInstruction.focus();
-            aiInstruction.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }
+        const aiGenerateBtn = document.getElementById("reply-ai-generate-btn");
+        window.setTimeout(function () {
+            if (aiGenerateBtn) {
+                aiGenerateBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            if (aiInstruction) aiInstruction.focus();
+        }, 60);
     }
 
     const AI_THINKING_LABELS = ["Düşünüyor", "Hazırlıyor"];
