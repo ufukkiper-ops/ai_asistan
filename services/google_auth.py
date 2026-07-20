@@ -162,7 +162,8 @@ def exchange_code_for_credentials(flow, authorization_response, require_mail_sco
             "Gmail izni verilmedi. Google Cloud Console → OAuth consent screen → "
             "Data Access / Scopes bölümüne https://mail.google.com/ ekleyin. "
             "Sonra https://myaccount.google.com/permissions adresinden "
-            "ai_kipasistan erişimini kaldırıp tekrar «Gmail ile senkronize et» deyin."
+            "Uygulama erişimini kaldırıp Mail → Hesap Ekle ile "
+            "e-posta ve uygulama şifresi kullanarak tekrar bağlayın."
         )
     expiry = _naive_utc_expiry(credentials.expiry)
     return {
