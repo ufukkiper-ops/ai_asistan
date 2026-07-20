@@ -53,7 +53,7 @@ def _mail_url(folder="inbox", account_id=None, search=""):
 @mail_bp.route("/mail-version")
 def mail_version():
     return {
-        "ui_version": "gmail-v57",
+        "ui_version": "gmail-v60",
         "layout": "gmail-sidebar",
         "message": "Çoklu mail hesabı desteği",
     }
@@ -228,6 +228,44 @@ def mail_save_draft():
         return jsonify({"error": f"Taslak kaydedilirken hata: {e}"}), 500
 
 
+@mail_bp.route("/mail/mark-read", methods=["POST"])
+def mail_mark_read():
+    if "user" not in session:
+        return jsonify({"error": "Oturum gerekli."}), 401
+
+    user = find_user_by_id(session.get("user"))
+    if not user:
+        return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+    data = request.get_json(silent=True) or {}
+    mail_ids = data.get("mail_ids") or []
+    if isinstance(mail_ids, str):
+        mail_ids = [part.strip() for part in mail_ids.split(",") if part.strip()]
+    single = (data.get("mail_id") or "").strip()
+    if single and single not in mail_ids:
+        mail_ids.append(single)
+
+    folder = (data.get("folder") or request.args.get("folder") or "inbox").strip() or "inbox"
+    account_id = (data.get("account") or request.args.get("account") or "").strip() or None
+    if account_id:
+        set_active_account(user, session, account_id)
+        user = find_user_by_id(session.get("user")) or user
+
+    mail_config, _active = resolve_active_mail_config(user, session, account_id)
+    if not mail_config:
+        return jsonify({"error": "Mail hesabı bağlı değil."}), 400
+
+    try:
+        from mail import mark_mails_as_read
+        from services.mail_ui import get_imap_folder_name
+
+        imap_folder = get_imap_folder_name(folder, mail_config)
+        marked = mark_mails_as_read(mail_config, imap_folder, mail_ids)
+        return jsonify({"ok": True, "marked": marked})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @mail_bp.route("/mail", methods=["GET", "POST"])
 def mail_page():
     if "user" not in session:
@@ -250,14 +288,16 @@ def mail_page():
     error = session.pop("mail_flash_error", "") or error
     success_message = session.pop("mail_flash_success", "") or success_message
 
-    requested_account = request.args.get("account") or request.form.get("account_id")
+    islem = request.form.get("islem", "") if request.method == "POST" else ""
+    # Silme formundaki account_id hedef hesaptır; aktif hesap yapma.
+    requested_account = request.args.get("account")
+    if not requested_account and islem not in {"hesap_sil", "hesap_ekle"}:
+        requested_account = request.form.get("account_id")
     if requested_account:
         set_active_account(user, session, requested_account)
         user = find_user_by_id(session.get("user"))
 
     if request.method == "POST":
-        islem = request.form.get("islem", "")
-
         if islem == "hesap_ekle":
             try:
                 new_account = add_mail_account(user, request.form)
@@ -272,10 +312,11 @@ def mail_page():
             try:
                 next_id = remove_mail_account(user, account_id)
                 set_active_account(user, session, next_id)
-                success_message = "Mail hesabı silindi."
-                return redirect(_mail_url(folder, next_id))
+                session["mail_flash_success"] = "Mail hesabı silindi."
+                return redirect(_mail_url(folder, next_id or None))
             except Exception as e:
-                error = str(e)
+                session["mail_flash_error"] = str(e)
+                return redirect(_mail_url(folder, get_active_account_id(user, session), search))
 
         elif islem == "hesap_degistir":
             account_id = request.form.get("account_id", "").strip()
@@ -324,6 +365,10 @@ def mail_page():
                 "spam", "spam_cikar", "cop_kurtar", "tumunu_geri_al"
             ):
                 folder = "inbox"
+                # Spam Değil sonrası güncel trusted_senders ile yeniden yükle
+                if request.form.get("islem") == "spam_cikar":
+                    user = find_user_by_id(session.get("user")) or user
+                    mail_settings = get_mail_settings(user)
                 try:
                     mailler, mail_meta = load_folder_mails(
                         folder, mail_config, settings=mail_settings, search=search
@@ -388,5 +433,5 @@ def mail_page():
         calendar_reminders=calendar_reminders,
         file_library=file_library,
         translate_languages=supported_languages(),
-        ui_version="gmail-v57",
+        ui_version="gmail-v60",
     )

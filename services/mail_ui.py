@@ -2,6 +2,7 @@ import os
 
 from mail import (
     _fetch_mail_by_uid,
+    _mail_id_bytes,
     connect_mail,
     fetch_attachment,
     get_archive,
@@ -130,12 +131,13 @@ def get_starred_imap(mail_config, count=20):
             result = []
             for mail_id in reversed(ids[-count:]):
                 try:
-                    thread_id, raw = _fetch_mail_by_uid(mail, mail_id, mail_config)
+                    thread_id, raw, unread = _fetch_mail_by_uid(mail, mail_id, mail_config)
                     if not raw:
                         continue
                     parsed = parse_message(raw, thread_id=thread_id)
                     parsed["id"] = mail_id.decode()
                     parsed["starred"] = True
+                    parsed["unread"] = bool(unread)
                     result.append(parsed)
                 except Exception:
                     continue
@@ -158,12 +160,19 @@ def load_single_mail(folder, mail_config, mail_id):
     imap_folder = get_imap_folder_name(folder, mail_config)
     mail_conn = connect_mail(mail_config, imap_folder)
     try:
-        thread_id, raw = _fetch_mail_by_uid(mail_conn, mail_id, mail_config)
+        thread_id, raw, unread = _fetch_mail_by_uid(mail_conn, mail_id, mail_config)
         if not raw:
             return None
 
         parsed = parse_message(raw, thread_id=thread_id)
         parsed["id"] = str(mail_id)
+        parsed["unread"] = bool(unread)
+        # Açıldığında IMAP üzerinde okundu işaretle
+        try:
+            mail_conn.uid("store", _mail_id_bytes(mail_id), "+FLAGS", "(\\Seen)")
+            parsed["unread"] = False
+        except Exception:
+            pass
         return parsed
     finally:
         try:
@@ -223,6 +232,20 @@ def _move_mails_to_inbox(form, mail_config, source_folder_key):
     folder_mails = get_folder_mails(mail_config, imap_source, count=200)
     expanded_ids = expand_selected_mail_ids(folder_mails, mail_ids)
 
+    selected = {
+        str(mid).strip()
+        for mid in (expanded_ids or mail_ids)
+        if str(mid).strip()
+    }
+    senders = []
+    for mail in folder_mails:
+        mail_id = str(mail.get("id") or "").strip()
+        thread_ids = {str(tid).strip() for tid in (mail.get("thread_ids") or []) if str(tid).strip()}
+        if mail_id in selected or (thread_ids & selected):
+            sender = (mail.get("sender") or mail.get("sender_display") or "").strip()
+            if sender:
+                senders.append(sender)
+
     moved, errors = move_mails_to_folder(
         mail_config,
         imap_source,
@@ -234,7 +257,7 @@ def _move_mails_to_inbox(form, mail_config, source_folder_key):
     if moved == 0:
         raise Exception(errors[0] if errors else "Mail taşınamadı.")
 
-    return moved, errors
+    return moved, errors, senders
 
 
 def generate_ai_mail_reply(
@@ -545,11 +568,22 @@ def handle_mail_action(form, mail_config, files=None, user=None):
 
     elif islem == "spam_cikar":
         try:
-            moved, errors = _move_mails_to_inbox(form, mail_config, "spam")
+            moved, errors, senders = _move_mails_to_inbox(form, mail_config, "spam")
+            trusted_added = []
+            if user and senders:
+                from services.mail_settings import add_trusted_senders
+
+                user_id = (user.get("email") or user.get("username") or "").strip()
+                trusted_added = add_trusted_senders(user_id, senders)
             if moved == 1:
                 success_message = "Mail spam klasöründen çıkarıldı ve gelen kutusuna taşındı."
             else:
                 success_message = f"{moved} mail spam klasöründen çıkarıldı ve gelen kutusuna taşındı."
+            if trusted_added:
+                success_message += (
+                    f" Bundan sonra {', '.join(trusted_added)} adresinden gelen mailler "
+                    "otomatik spam'e düşmeyecek."
+                )
             if errors:
                 success_message += f" ({len(errors)} mail taşınamadı.)"
         except Exception as e:
@@ -557,7 +591,7 @@ def handle_mail_action(form, mail_config, files=None, user=None):
 
     elif islem == "cop_kurtar":
         try:
-            moved, errors = _move_mails_to_inbox(form, mail_config, "trash")
+            moved, errors, _senders = _move_mails_to_inbox(form, mail_config, "trash")
             if moved == 1:
                 success_message = "Mail çöp kutusundan geri alındı ve gelen kutusuna taşındı."
             else:

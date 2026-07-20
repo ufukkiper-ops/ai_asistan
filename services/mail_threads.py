@@ -165,6 +165,7 @@ def group_mails_by_thread(mailler):
             "thread_ids": thread_ids,
             "thread_count": len(messages),
             "thread_messages": messages,
+            "unread": any(bool(mail.get("unread")) for mail in messages),
         })
 
     return grouped

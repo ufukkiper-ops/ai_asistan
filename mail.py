@@ -363,13 +363,29 @@ def _extract_rfc822_from_fetch(msg_data):
 
 def _fetch_mail_by_uid(mail, mail_id, config):
     uid = _mail_id_bytes(mail_id)
-    _, msg_data = mail.uid("fetch", uid, "(RFC822)")
+    _, msg_data = mail.uid("fetch", uid, "(FLAGS RFC822)")
     raw = _extract_rfc822_from_fetch(msg_data)
     if not raw:
-        return None, None
+        return None, None, True
+
+    flags = ""
+    try:
+        for part in msg_data or []:
+            header = part[0] if isinstance(part, tuple) else part
+            if isinstance(header, bytes):
+                header = header.decode("utf-8", errors="ignore")
+            elif isinstance(header, tuple) and header:
+                header = header[0].decode("utf-8", errors="ignore") if isinstance(header[0], bytes) else str(header[0])
+            if header and "FLAGS" in str(header).upper():
+                flags = str(header)
+                break
+    except Exception:
+        flags = ""
+
+    unread = not bool(re.search(r"\\Seen\b", flags, re.I))
 
     thread_id = _fetch_gmail_thread_id(mail, uid) if _is_gmail_config(config) else None
-    return thread_id, raw
+    return thread_id, raw, unread
 
 
 def list_folder_uids(config, folder):
@@ -657,12 +673,13 @@ def get_folder_mails(config, folder="INBOX", count=20):
 
         for mail_id in reversed(ids[-count:]):
             try:
-                thread_id, raw = _fetch_mail_by_uid(mail, mail_id, config)
+                thread_id, raw, unread = _fetch_mail_by_uid(mail, mail_id, config)
                 if not raw:
                     continue
 
                 parsed = parse_message(raw, thread_id=thread_id)
                 parsed["id"] = mail_id.decode()
+                parsed["unread"] = bool(unread)
                 result.append(parsed)
             except Exception as e:
                 print("MAIL HATASI:", e)
@@ -717,10 +734,39 @@ def get_archive(config, count=20):
     return get_first_available_folder(config, FOLDER_CANDIDATES["archive"], count)
 
 
+def mark_mails_as_read(config, folder, mail_ids):
+    """IMAP: \\Seen bayrağı ekle. Gmail API hesaplarında Gmail etiketini kaldır."""
+    from services.gmail_api import is_gmail_api_config, mark_mails_as_read as gmail_mark_read
+
+    ids = [str(mid).strip() for mid in (mail_ids or []) if str(mid).strip()]
+    if not ids:
+        return 0
+
+    if is_gmail_api_config(config):
+        return gmail_mark_read(config, ids)
+
+    mail = connect_mail(config, folder or "INBOX")
+    marked = 0
+    try:
+        for mail_id in ids:
+            try:
+                status, _ = mail.uid("store", _mail_id_bytes(mail_id), "+FLAGS", "(\\Seen)")
+                if status == "OK":
+                    marked += 1
+            except Exception:
+                continue
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+    return marked
+
+
 def fetch_attachment(config, folder, mail_id, index):
     mail = connect_mail(config, folder)
     try:
-        _, raw = _fetch_mail_by_uid(mail, mail_id, config)
+        _, raw, _unread = _fetch_mail_by_uid(mail, mail_id, config)
         if not raw:
             raise FileNotFoundError("Mail bulunamadı.")
 

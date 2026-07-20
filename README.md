@@ -4,14 +4,27 @@ AI destekli mail asistanı. Gmail için **Google OAuth 2.0 + Gmail API**, diğer
 
 ## Özellikler
 
-- **Gmail Hesabı Ekle** → Google OAuth ekranı
-- Birden fazla Gmail (ve Outlook/Yahoo) hesabı
-- Access / refresh token şifreli saklama; süre dolunca otomatik yenileme
-- Gmail API: gelen kutusu, detay, gönder, taslak, yıldızlı, okunmamış, spam, çöp, arama
+- Birden fazla Gmail, Outlook/Yahoo ve özel IMAP hesabı (uygulama şifresi ile)
+- Access / refresh token şifreli saklama (önceden OAuth ile bağlanmış hesaplar için)
+- Gmail API / IMAP: gelen kutusu, detay, gönder, taslak, yıldızlı, okunmamış, spam, çöp, arama
 - AI özet ve cevap önerileri (OpenAI)
-- Çıkışta Google token revoke + kayıtların temizlenmesi
+- **Not:** Gmail / Outlook / Yahoo otomatik (OAuth) girişi varsayılan olarak kapalıdır. Hesap ekleme e-posta + uygulama şifresi ile yapılır.
 
 ## Kurulum (yerel)
+
+### Masaüstü uygulaması (Windows / Linux)
+
+```bat
+desktop\start.bat
+```
+
+veya:
+
+```bash
+./desktop/start.sh
+```
+
+Ayrıntılar: [desktop/README.md](desktop/README.md) — Windows `.exe` derleme ve Microsoft Store notları dahil.
 
 ### 1. Bağımlılıklar
 
@@ -59,7 +72,38 @@ python app.py
 # veya start.bat
 ```
 
-Aç: `http://127.0.0.1:5001/login` → Mail → **Gmail Hesabı Ekle**
+Aç: `http://127.0.0.1:5001/login` → Mail → **Hesap Ekle** (e-posta + uygulama şifresi)
+
+> Gmail / Outlook / Yahoo OAuth (şifresiz) giriş kapalıdır. Yeniden açmak için `OAUTH_LOGIN_ENABLED=1` ortam değişkenini ekleyin.
+
+## Railway deploy
+
+1. [railway.com/new](https://railway.com/new) → **Deploy from GitHub repo**
+2. Repo: `ufukkiper-ops/ai_asistan` (branch: `cursor/desktop-app-2ceb` veya `main`)
+3. Railway `Procfile` / `railway.toml` ile otomatik başlar
+4. Variables (Settings → Variables):
+
+| Değişken | Örnek |
+|----------|--------|
+| `FLASK_SECRET_KEY` | güçlü rastgele değer |
+| `OPENAI_API_KEY` | `sk-...` |
+| `PUBLIC_BASE_URL` | `https://<proje>.up.railway.app` |
+| `RAILWAY` | `1` (opsiyonel) |
+
+5. Deploy sonrası health: `https://<proje>.up.railway.app/health`
+
+> Not: Railway’de kalıcı disk yoksa `users.json` / mail hesapları redeploy’da silinebilir. Volume eklemeniz önerilir (`/workspace` veya proje kökü).
+
+## Sürekli açık PC sunucu (köle bilgisayar)
+
+Formatlanmış ikinci Windows PC’yi sunucu yapmak için:
+
+```bat
+server\install_server.bat
+server\run_server.bat
+```
+
+Ayrıntı: [server/README.md](server/README.md)
 
 ## Render deploy
 

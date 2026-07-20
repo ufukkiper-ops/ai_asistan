@@ -96,6 +96,7 @@ def _serialize_mail(mail, for_list=False):
         "attachments": attachments,
         "thread_count": mail.get("thread_count", 1),
         "starred": bool(mail.get("starred")),
+        "unread": bool(mail.get("unread")),
     }
 
 
@@ -188,8 +189,9 @@ def api_register():
     }
     if link_gmail:
         from services.google_auth import is_google_configured
+        from services.oauth_mail import is_oauth_login_enabled
 
-        response["gmail_oauth_available"] = is_google_configured()
+        response["gmail_oauth_available"] = is_oauth_login_enabled() and is_google_configured()
     return jsonify(response), 201
 
 
@@ -197,7 +199,17 @@ def api_register():
 def api_google_auth_start():
     """Android: Google ile giris/kayit; with_mail=1 ise Gmail de baglanir."""
     from services.google_auth import build_authorization_url, get_redirect_uri, is_google_configured
-    from services.oauth_mail import save_oauth_state
+    from services.oauth_mail import (
+        OAUTH_LOGIN_DISABLED_MESSAGE,
+        is_oauth_login_enabled,
+        save_oauth_state,
+    )
+
+    if not is_oauth_login_enabled():
+        return jsonify({
+            "error": OAUTH_LOGIN_DISABLED_MESSAGE,
+            "configured": False,
+        }), 503
 
     if not is_google_configured():
         return jsonify({"error": "Google OAuth sunucuda yapılandırılmadı.", "configured": False}), 503
@@ -239,8 +251,10 @@ def api_google_auth_start():
 @mobile_api_bp.route("/auth/google/status", methods=["GET"])
 def api_google_auth_status():
     from services.google_auth import is_google_configured
+    from services.oauth_mail import is_oauth_login_enabled
 
-    return jsonify({"configured": is_google_configured()})
+    enabled = is_oauth_login_enabled() and is_google_configured()
+    return jsonify({"configured": enabled, "enabled": is_oauth_login_enabled()})
 
 
 @mobile_api_bp.route("/me", methods=["GET"])
@@ -463,7 +477,19 @@ def api_list_mail_accounts(user_id):
 @mobile_api_bp.route("/mail/oauth/<provider>/start", methods=["GET"])
 @require_api_user
 def api_mail_oauth_start(user_id, provider):
-    from services.oauth_mail import OAUTH_PROVIDERS, oauth_provider_status, save_oauth_state
+    from services.oauth_mail import (
+        OAUTH_LOGIN_DISABLED_MESSAGE,
+        OAUTH_PROVIDERS,
+        is_oauth_login_enabled,
+        oauth_provider_status,
+        save_oauth_state,
+    )
+
+    if not is_oauth_login_enabled():
+        return jsonify({
+            "error": OAUTH_LOGIN_DISABLED_MESSAGE,
+            "configured": False,
+        }), 503
 
     provider = (provider or "").strip().lower()
     if provider not in OAUTH_PROVIDERS:
@@ -584,7 +610,12 @@ def api_delete_mail_account(user_id, account_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    return jsonify({"active_account_id": next_id})
+    if next_id:
+        set_active_account(user, {}, next_id)
+    else:
+        set_active_account(user, {}, "")
+
+    return jsonify({"active_account_id": next_id or None, "removed": True})
 
 
 @mobile_api_bp.route("/mail", methods=["GET"])

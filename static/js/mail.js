@@ -1,6 +1,6 @@
 (function () {
 
-    const READ_KEY = "kipgpt_read_mails";
+    const READ_KEY_BASE = "kipgpt_read_mails";
 
     const mailsData = JSON.parse(
         document.getElementById("mails-data")?.textContent || "[]"
@@ -73,16 +73,30 @@
     const readerBack = document.getElementById("reader-back");
     const gmailReader = document.getElementById("gmail-reader");
 
+    function readStorageKey() {
+        return READ_KEY_BASE + "::" + (currentAccount || "default");
+    }
+
     function getReadSet() {
         try {
-            return new Set(JSON.parse(localStorage.getItem(READ_KEY) || "[]"));
+            const scoped = JSON.parse(localStorage.getItem(readStorageKey()) || "[]");
+            if (scoped && scoped.length) {
+                return new Set(scoped);
+            }
+            // Eski global anahtarı bir kez taşı
+            const legacy = JSON.parse(localStorage.getItem(READ_KEY_BASE) || "[]");
+            if (legacy && legacy.length) {
+                localStorage.setItem(readStorageKey(), JSON.stringify(legacy));
+                return new Set(legacy);
+            }
+            return new Set();
         } catch (e) {
             return new Set();
         }
     }
 
     function saveReadSet(readSet) {
-        localStorage.setItem(READ_KEY, JSON.stringify(Array.from(readSet)));
+        localStorage.setItem(readStorageKey(), JSON.stringify(Array.from(readSet)));
     }
 
     function markAsRead(mailId) {
@@ -97,6 +111,26 @@
             row.classList.remove("unread");
             row.classList.add("read");
         }
+
+        const mail = mailMap[mailId];
+        if (mail) mail.unread = false;
+    }
+
+    function persistReadOnServer(mailIds) {
+        const ids = (mailIds || []).filter(Boolean);
+        if (!ids.length) return;
+        try {
+            fetch("/mail/mark-read", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    mail_ids: ids,
+                    folder: currentFolder,
+                    account: currentAccount || undefined,
+                }),
+                keepalive: true,
+            }).catch(function () {});
+        } catch (_err) {}
     }
 
     function applyReadState() {
@@ -104,15 +138,33 @@
 
         document.querySelectorAll(".gmail-row").forEach(function (row) {
             const mailId = row.dataset.mailId;
+            const mail = mailMap[mailId];
+            const serverUnread = mail && typeof mail.unread === "boolean" ? mail.unread : null;
+            let isUnread;
 
             if (readSet.has(mailId)) {
-                row.classList.add("read");
-                row.classList.remove("unread");
+                isUnread = false;
+            } else if (serverUnread === false) {
+                isUnread = false;
+                // Sunucu okundu diyorsa local'e de yaz (kalıcılık)
+                readSet.add(mailId);
+            } else if (serverUnread === true) {
+                isUnread = true;
             } else {
+                // Sunucu bilgisi yoksa: bilinmeyenleri okunmamış sayma; varsayılan okundu
+                // (yeniden girişte sahte "okunmamış" yağmurunu önler)
+                isUnread = false;
+            }
+
+            if (isUnread) {
                 row.classList.add("unread");
                 row.classList.remove("read");
+            } else {
+                row.classList.add("read");
+                row.classList.remove("unread");
             }
         });
+        saveReadSet(readSet);
     }
 
     const aiDraftData = JSON.parse(
@@ -513,6 +565,7 @@
         (mail.thread_ids || []).forEach(function (id) {
             markAsRead(id);
         });
+        persistReadOnServer([mail.id].concat(mail.thread_ids || []));
 
         if (isDraftMail(mail)) {
             showDraftView();
@@ -745,23 +798,33 @@
         fillManualReplyFields(mail, !!replyAll);
         manualReplyPanel.hidden = false;
         if (aiPanel) aiPanel.hidden = true;
-        manualReplyPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        const aiGenerateBtn = document.getElementById("reply-ai-generate-btn");
         const aiInstruction = document.getElementById("ai-user-instruction");
-        if (aiInstruction) {
-            aiInstruction.focus();
-        } else if (manualReplyBody) {
-            manualReplyBody.focus();
-        }
+        window.setTimeout(function () {
+            if (aiGenerateBtn) {
+                aiGenerateBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            } else {
+                manualReplyPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+            if (aiInstruction) {
+                aiInstruction.focus();
+            } else if (manualReplyBody) {
+                manualReplyBody.focus();
+            }
+        }, 40);
     }
 
     function showAiReplyPanel() {
         // AI artık yanıt panelinin içinde; varsayılan olarak yanıtla aç
         showManualReplyPanel(false);
         const aiInstruction = document.getElementById("ai-user-instruction");
-        if (aiInstruction) {
-            aiInstruction.focus();
-            aiInstruction.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }
+        const aiGenerateBtn = document.getElementById("reply-ai-generate-btn");
+        window.setTimeout(function () {
+            if (aiGenerateBtn) {
+                aiGenerateBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            if (aiInstruction) aiInstruction.focus();
+        }, 60);
     }
 
     const AI_THINKING_LABELS = ["Düşünüyor", "Hazırlıyor"];
@@ -1541,22 +1604,19 @@
         });
     }
 
-    // OAuth kurulu degilse: sifre istemeden kurulum / Google Cloud adimlarina git
-    document.querySelectorAll(".oauth-connect-btn").forEach(function (btn) {
+    document.querySelectorAll(".account-item-remove").forEach(function (btn) {
         btn.addEventListener("click", function (e) {
-            if (btn.getAttribute("data-oauth-configured") !== "0") {
-                return;
-            }
             e.preventDefault();
-            var name = (btn.getAttribute("data-oauth-provider") || "").toLowerCase();
-            if (name === "google") {
-                window.location.href = "/google-ayar?next=link_mail";
-                return;
-            }
-            window.alert(
-                name.toUpperCase() + " şifresiz bağlantı henüz kurulmadı.\n" +
-                "Gerekirse alttan IMAP / uygulama şifresi ile ekleyebilirsiniz."
+            e.stopPropagation();
+            var form = btn.closest("form");
+            if (!form) return;
+            var email = btn.getAttribute("data-confirm-email") || "bu mail hesabını";
+            var ok = window.confirm(
+                email + " hesabını silmek istediğinize emin misiniz?\n\n" +
+                "Son hesap olsa bile silinir. Bu işlem geri alınamaz."
             );
+            if (!ok) return;
+            form.submit();
         });
     });
 

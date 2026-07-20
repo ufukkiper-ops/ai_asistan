@@ -357,6 +357,31 @@ def create_draft(config, to_email="", subject="", body="", attachments=None, cc=
         raise GmailApiError(_user_friendly_error(exc)) from exc
 
 
+def mark_mails_as_read(config, mail_ids):
+    """Gmail API: UNREAD etiketini kaldır."""
+    ids = [str(mid).strip() for mid in (mail_ids or []) if str(mid).strip()]
+    if not ids:
+        return 0
+    try:
+        service = build_gmail_service(config)
+        marked = 0
+        for mail_id in ids:
+            try:
+                service.users().messages().modify(
+                    userId="me",
+                    id=mail_id,
+                    body={"removeLabelIds": ["UNREAD"]},
+                ).execute()
+                marked += 1
+            except Exception:
+                continue
+        return marked
+    except GmailApiError:
+        raise
+    except Exception as exc:
+        raise GmailApiError(_user_friendly_error(exc)) from exc
+
+
 def download_attachment(config, mail_id: str, index: int):
     try:
         service = build_gmail_service(config)

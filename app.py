@@ -61,7 +61,11 @@ def health():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    is_local = not os.environ.get("RENDER")
+    is_local = not (
+        os.environ.get("RENDER")
+        or os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_PROJECT_ID")
+    )
 
     app.run(
         host="0.0.0.0",
